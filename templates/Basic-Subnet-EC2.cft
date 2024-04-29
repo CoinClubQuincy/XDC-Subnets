@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: EC2 Auto Scaling Group with Load Balancer in an Imported VPC
+
+Parameters:
+  ExistingVpcId:
+    Type: 'AWS::EC2::VPC::Id'
+    Description: Enter the ID of an existing VPC.
+
+  LoadBalancerSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Enter the IDs of the subnets where the Load Balancer will be deployed.
+
+Resources:
+  MySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH and HTTP/HTTPS traffic
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 22
+          IpProtocol: tcp
+          ToPort: 22
+        - CidrIp: 0.0.0.0/0
+          FromPort: 80
+          IpProtocol: tcp
+          ToPort: 80
+        - CidrIp: 0.0.0.0/0
+          FromPort: 443
+          IpProtocol: tcp
+          ToPort: 443
+
+  MyAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AvailabilityZones:
+        - !GetAZs ''
+      LaunchConfigurationName:
+        Ref: MyLaunchConfig
+      MinSize: 3
+      MaxSize: 10
+      DesiredCapacity: 3
+      VPCZoneIdentifier:
+        - !Ref ExistingVpcId
+
+  MyLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: ami-0fc5d935ebf8bc3bc
+      InstanceType: t2.micro
+      SecurityGroups:
+        - !Ref MySecurityGroup
+      KeyName: <Your Key Pair Name>
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          sudo apt-get update -y
+          sudo apt-get install -y apache2
+    DependsOn: MySecurityGroup 
+
+  MyLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets:
+        !Ref LoadBalancerSubnets 
+      SecurityGroups:
+        - !Ref MySecurityGroup
+    DependsOn: MySecurityGroup 
+
+  MyTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref ExistingVpcId
+
+  MyListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            ContentType: text/plain
+            StatusCode: 200
+      LoadBalancerArn:
+        Ref: MyLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+Outputs:
+  LoadBalancerDNSName:
+    Description: DNS name of the load balancer
+    Value: !GetAtt MyLoadBalancer.DNSName
