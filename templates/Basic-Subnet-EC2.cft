@@ -10,6 +10,22 @@ Parameters:
     Type: List<AWS::EC2::Subnet::Id>
     Description: Enter the IDs of the subnets where the Load Balancer will be deployed.
 
+  Address:
+    Type: String
+    Description: Enter the address to be passed to the shell script.
+
+  MinSize:
+    Type: Number
+    Description: The minimum size of the auto scaling group.
+
+  MaxSize:
+    Type: Number
+    Description: The maximum size of the auto scaling group.
+
+  DesiredCapacity:
+    Type: Number
+    Description: The desired capacity of the auto scaling group.
+
 Resources:
   MySecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -36,25 +52,26 @@ Resources:
         - !GetAZs ''
       LaunchConfigurationName:
         Ref: MyLaunchConfig
-      MinSize: 3
-      MaxSize: 10
-      DesiredCapacity: 3
+      MinSize: !Ref MinSize
+      MaxSize: !Ref MaxSize
+      DesiredCapacity: !Ref DesiredCapacity
       VPCZoneIdentifier:
         - !Ref ExistingVpcId
 
   MyLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
-      ImageId: ami-0fc5d935ebf8bc3bc
+      ImageId: ami-0827b6c5b977c020e
       InstanceType: t2.micro
       SecurityGroups:
         - !Ref MySecurityGroup
-      KeyName: <Your Key Pair Name>
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
           sudo apt-get update -y
           sudo apt-get install -y apache2
+          ADDRESS=${Address}
+
     DependsOn: MySecurityGroup 
 
   MyLoadBalancer:

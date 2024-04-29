@@ -1,4 +1,14 @@
 #!/bin/bash
+#./deploy_subnet.sh YourWalletAddress YourWalletPrivateKey
+
+# Check if wallet address and private key are passed as arguments
+if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 YourWalletAddress YourWalletPrivateKey"
+    exit 1
+fi
+
+WALLET_ADDRESS=$1
+WALLET_PRIVATE_KEY=$2
 
 # Clone the repo
 git clone https://github.com/XinFinOrg/XinFin-Node.git
@@ -14,8 +24,8 @@ sed -i 's|NUM_MACHINE=.*|NUM_MACHINE=1|' docker.env
 sed -i 's|NUM_SUBNET=.*|NUM_SUBNET=3|' docker.env
 sed -i 's|MAIN_IP=.*|MAIN_IP=1.11.111.111|' docker.env
 sed -i 's|PARENTCHAIN=.*|PARENTCHAIN=devnet|' docker.env
-sed -i 's|PARENTCHAIN_WALLET=.*|PARENTCHAIN_WALLET=YourWalletAddress|' docker.env
-sed -i 's|PARENTCHAIN_WALLET_PK=.*|PARENTCHAIN_WALLET_PK=YourWalletPrivateKey|' docker.env
+sed -i "s|PARENTCHAIN_WALLET=.*|PARENTCHAIN_WALLET=$WALLET_ADDRESS|" docker.env
+sed -i "s|PARENTCHAIN_WALLET_PK=.*|PARENTCHAIN_WALLET_PK=$WALLET_PRIVATE_KEY|" docker.env
 
 # Pull the latest subnet-generator image
 docker pull xinfinorg/subnet-generator:latest
