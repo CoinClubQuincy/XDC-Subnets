@@ -21,7 +21,7 @@ This script is used to deploy a subnet on XinFin Network.
 ./deploy_subnet.sh YourWalletAddress YourWalletPrivateKey
 ```
 
-# EC2 Auto Scaling Group with Load Balancer in an Imported VPC
+# AWS Seubnet Deployment
 
 This is an AWS CloudFormation template that deploys an EC2 Auto Scaling Group with a Load Balancer in an existing VPC.
 
