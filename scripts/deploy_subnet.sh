@@ -7,61 +7,80 @@ if [ "$#" -ne 2 ]; then
     exit 1
 fi
 
-WALLET_ADDRESS=$1
+PARENTNET_WALLET_PK=$1
 WALLET_PRIVATE_KEY=$2
 
-# Clone the repo
-if [ ! -d "XinFin-Node" ]; then
-    git clone https://github.com/XinFinOrg/XinFin-Node.git
-    echo "Downloading XinFin-Node..."
-fi
+sudo apt-get update
+
+# Install packages to allow apt to use a repository over HTTPS
+sudo apt-get install \
+    apt-transport-https \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release
+
+# Add Docker’s official GPG key
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+# Set up the stable repository
+echo \
+  "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Update the apt package index, and install Docker engine
+sudo apt-get update
+sudo apt-get install docker-ce docker-ce-cli containerd.io
+
+git clone https://github.com/XinFinOrg/XinFin-Node.git
+echo "Cloned XinFin-Node"
+
 cd XinFin-Node/subnet/deployment-generator/
 echo "Cloned XinFin-Node"
 
-# Create a new environment file
 cp script/docker.env.example docker.env
 echo "Created docker.env"
 
 # Update the env file
-sed -i '' 's|CONFIG_PATH=.*|CONFIG_PATH=~/XinFin-Node/subnet/deployment-generator|' docker.env
-sed -i '' 's|NETWORK_NAME=.*|NETWORK_NAME=xdcsubnet|' docker.env
-sed -i '' 's|NUM_MACHINE=.*|NUM_MACHINE=1|' docker.env
-sed -i '' 's|NUM_SUBNET=.*|NUM_SUBNET=3|' docker.env
-sed -i '' 's|MAIN_IP=.*|MAIN_IP=1.11.111.111|' docker.env
-sed -i '' 's|PARENTCHAIN=.*|PARENTCHAIN=devnet|' docker.env
-sed -i '' "s|PARENTCHAIN_WALLET=.*|PARENTCHAIN_WALLET=$WALLET_ADDRESS|" docker.env
-sed -i '' "s|PARENTCHAIN_WALLET_PK=.*|PARENTCHAIN_WALLET_PK=$WALLET_PRIVATE_KEY|" docker.env
+NETWORK_NAME="xdcsubnet"
+NUM_MACHINE="1"
+NUM_SUBNET="3"
+MAIN_IP=$(ip -4 addr | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n 1)
+PARENTNET="devnet"
 
-echo "update env file"
-# Pull the latest subnet-generator image
-echo "Pulling latest subnet-generator image..."
-docker pull xinfinorg/subnet-generator:latest
-
-# Generate all the required files in the generated directory
-echo "Generating files..."
-docker run --env-file docker.env -v $(pwd)/generated:/app/generated xinfinorg/subnet-generator:latest
+grep -q '^CONFIG_PATH=' docker.env || sed -i'' '1iCONFIG_PATH='"$PWD" docker.env
+sed -i "s|NETWORK_NAME=.*|NETWORK_NAME=$NETWORK_NAME|" docker.env
+sed -i "s|NUM_MACHINE=.*|NUM_MACHINE=$NUM_MACHINE|" docker.env
+sed -i "s|NUM_SUBNET=.*|NUM_SUBNET=$NUM_SUBNET|" docker.env
+sed -i "s|MAIN_IP=.*|MAIN_IP=$MAIN_IP|" docker.env
+sed -i "s|PARENTNET=.*|PARENTNET=$PARENTNET|" docker.env
+sed -i "s|PARENTNET_WALLET_PK=.*|PARENTNET_WALLET=$PARENTNET_WALLET_PK|" docker.env
+grep -q '^PARENTCHAIN_WALLET_PK=' docker.env || echo "PARENTCHAIN_WALLET_PK=$WALLET_PRIVATE_KEY" >> docker.env
 
 
+sudo docker pull xinfinorg/subnet-generator:latest
+
+sudo docker run --env-file docker.env -v $(pwd)/generated:/app/generated xinfinorg/subnet-generator:latest && cd generated
+
+sudo docker compose --env-file docker-compose.env --profile machine1 pull
+sudo docker compose --env-file docker-compose.env --profile machine1 up -d
+
+cd ../
+
+OUTPUT=$(sudo docker run --env-file docker.env \
+    -v $(pwd)/generated/deployment.json:/app/generated/deployment.json \
+    --entrypoint 'bash' xinfinorg/subnet-generator:latest ./deploy_csc.sh)
+
+# Extract the last line
+LAST_LINE=$(echo "$OUTPUT" | tail -n 1)
+
+# Extract the address
+DELPOY_ADDRESS=$(echo "$LAST_LINE" | awk -F':' '{print $2}')
+
+# Print the address
+echo $DELPOY_ADDRESS
 
 
-# Check if the generated directory exists before trying to cd into it
-if [ -d "~/.XinFin-Node/subnet/deployment-generator/generated" ]; then
-    cd ~/.XinFin-Node/subnet/deployment-generator/generated
-    docker compose --env-file docker-compose.env --profile machine1 pull
-    docker compose --env-file docker-compose.env --profile machine1 up -d
-    echo "Deployed subnet"
-fi
 
-# Deploy checkpoint smart contract
-if [ -d "~/.XinFin-Node/subnet/deployment-generator" ]; then
-    cd ~/.XinFin-Node/subnet/deployment-generator
-    docker run --env-file docker.env -v $(pwd)/generated/deployment.json:/app/generated/deployment.json --entrypoint 'bash' xinfinorg/subnet-generator:latest ./deploy_csc.sh 
-    echo "Deployed checkpoint smart contract"
-fi
 
-echo "Deployment complete"
-# Start services and frontend
-docker compose --env-file docker-compose.env --profile services pull
-docker compose --env-file docker-compose.env --profile services up -d
 
-echo "Started services and frontend"
