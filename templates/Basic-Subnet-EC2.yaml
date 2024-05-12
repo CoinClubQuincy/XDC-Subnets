@@ -30,6 +30,22 @@ Parameters:
     Type: Number
     Description: The desired capacity of the auto scaling group.
 
+  instanceSize:
+    Type: String
+    Description: The size of the instance.
+    Default: t2.micro
+    AllowedValues: 
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m5.12xlarge
+      - m5.24xlarge
+
 Resources:
   MySecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -60,12 +76,16 @@ Resources:
       MaxSize: !Ref MaxSize
       DesiredCapacity: !Ref DesiredCapacity
       VPCZoneIdentifier: !Ref LoadBalancerSubnets
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+          PropagateAtLaunch: true
 
   MyLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
       ImageId: ami-0827b6c5b977c020e
-      InstanceType: t2.micro
+      InstanceType: !Ref instanceSize
       SecurityGroups:
         - !Ref MySecurityGroup
       UserData:
