@@ -14,6 +14,10 @@ Parameters:
     Type: String
     Description: Enter the address to be passed to the shell script.
 
+  privateKey:
+    Type: String
+    Description: Enter the Key to be passed to the shell script. - [for TESTING PURPOSES ONLY]
+
   MinSize:
     Type: Number
     Description: The minimum size of the auto scaling group.
@@ -44,19 +48,18 @@ Resources:
           FromPort: 443
           IpProtocol: tcp
           ToPort: 443
+      VpcId: !Ref ExistingVpcId
 
   MyAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      AvailabilityZones:
-        - !GetAZs ''
+      AvailabilityZones: !Split [ ",", !Join [ ",", !GetAZs "" ] ]
       LaunchConfigurationName:
         Ref: MyLaunchConfig
       MinSize: !Ref MinSize
       MaxSize: !Ref MaxSize
       DesiredCapacity: !Ref DesiredCapacity
-      VPCZoneIdentifier:
-        - !Ref ExistingVpcId
+      VPCZoneIdentifier: !Ref LoadBalancerSubnets
 
   MyLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
@@ -71,6 +74,7 @@ Resources:
           sudo apt-get update -y
           sudo apt-get install -y apache2
           ADDRESS=${Address}
+          PRIVATEKEY=${privateKey}
 
     DependsOn: MySecurityGroup 
 
