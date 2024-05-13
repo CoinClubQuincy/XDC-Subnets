@@ -45,7 +45,7 @@ echo "Created docker.env"
 NETWORK_NAME="xdcsubnet"
 NUM_MACHINE="1"
 NUM_SUBNET="3"
-MAIN_IP=$(ip -4 addr | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n 1)
+MAIN_IP=$(curl -s ifconfig.me)
 PARENTNET="devnet"
 
 grep -q '^CONFIG_PATH=' docker.env || sed -i'' '1iCONFIG_PATH='"$PWD" docker.env
@@ -56,7 +56,7 @@ sed -i "s|MAIN_IP=.*|MAIN_IP=$MAIN_IP|" docker.env
 sed -i "s|PARENTNET=.*|PARENTNET=$PARENTNET|" docker.env
 sed -i "s|PARENTNET_WALLET_PK=.*|PARENTNET_WALLET=$PARENTNET_WALLET_PK|" docker.env
 grep -q '^PARENTCHAIN_WALLET_PK=' docker.env || echo "PARENTCHAIN_WALLET_PK=$WALLET_PRIVATE_KEY" >> docker.env
-
+grep -q '^PRIVATE_KEY=' docker.env || echo "PRIVATE_KEY=$WALLET_PRIVATE_KEY" >> docker.env
 
 sudo docker pull xinfinorg/subnet-generator:latest
 
@@ -67,18 +67,15 @@ sudo docker compose --env-file docker-compose.env --profile machine1 up -d
 
 cd ../
 
-OUTPUT=$(sudo docker run --env-file docker.env \
+sudo docker run --env-file docker.env \
     -v $(pwd)/generated/deployment.json:/app/generated/deployment.json \
-    --entrypoint 'bash' xinfinorg/subnet-generator:latest ./deploy_csc.sh)
+    --entrypoint 'bash' xinfinorg/subnet-generator:latest /app/start.sh
 
-# Extract the last line
-LAST_LINE=$(echo "$OUTPUT" | tail -n 1)
+cd generated
 
-# Extract the address
-DELPOY_ADDRESS=$(echo "$LAST_LINE" | awk -F':' '{print $2}')
+sudo docker compose --env-file docker-compose.env --profile services pull
+sudo docker compose --env-file docker-compose.env --profile services up -d
 
-# Print the address
-echo $DELPOY_ADDRESS
 
 
 
