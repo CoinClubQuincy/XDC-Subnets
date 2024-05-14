@@ -1,5 +1,7 @@
 # XDC-Subnets
 This is a simple and automate way to set up XDC subnets with a simple script
+![subnets](https://github.com/CoinClubQuincy/XDC-Subnets/assets/16103963/c4765361-123a-4747-afcc-5611839081d9)
+
 # Subnet Deployment Script
 This script is used to deploy a subnet on XinFin Network.
 
