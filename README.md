@@ -1,5 +1,5 @@
 # XDC-Subnets
-This is a simple and automate way to set up XDC subnets with a simple script
+This is a simple and automated way to set up XDC subnets with script
 ![subnets](https://github.com/CoinClubQuincy/XDC-Subnets/assets/16103963/c4765361-123a-4747-afcc-5611839081d9)
 
 # Subnet Deployment Script
@@ -15,7 +15,7 @@ This script is used to deploy a subnet on XinFin Network.
 
 1. Clone this repository to your local machine.
 
-2. Navigate to the directory containing the `deploy_subnet.sh` script.
+2. Navigate to the /scripts directory containing the `deploy_subnet.sh` script.
 
 3. Run the script with your wallet address and private key as arguments:
 
@@ -30,7 +30,7 @@ This is an AWS CloudFormation template that deploys an EC2 Auto Scaling Group wi
 ## Prerequisites
 
 - AWS Account
-- Existing VPC and Subnets
+- Existing VPC and VPC Subnets
 - AWS CLI installed and configured
 
 ## Parameters
