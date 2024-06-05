@@ -2,13 +2,14 @@
 #./deploy_subnet.sh YourWalletAddress YourWalletPrivateKey
 
 # Check if wallet address and private key are passed as arguments
-if [ "$#" -ne 2 ]; then
-    echo "Usage: $0 YourWalletAddress YourWalletPrivateKey"
+if [ "$#" -ne 3 ]; then
+    echo "Usage: $0 YourWalletAddress YourWalletPrivateKey ParentNetURL"
     exit 1
 fi
 
 PARENTNET_WALLET_PK=$1
 WALLET_PRIVATE_KEY=$2
+PARENTNET_URL=$3
 
 sudo apt-get update
 
@@ -18,7 +19,8 @@ sudo apt-get install \
     ca-certificates \
     curl \
     gnupg \
-    lsb-release
+    lsb-release \
+    apt install npm
 
 # Add Docker’s official GPG key
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
@@ -67,11 +69,42 @@ sudo docker compose --env-file docker-compose.env --profile machine1 up -d
 
 cd ../
 
-sudo docker run --env-file docker.env \
-    -v $(pwd)/generated/deployment.json:/app/generated/deployment.json \
-    --entrypoint 'bash' xinfinorg/subnet-generator:latest /app/start.sh
+sudo docker run --env-file docker.env -v $(pwd)/generated:/app/generated xinfinorg/subnet-generator:latest && cd generated
 
-cd generated
+
+if grep -q "PARENTNET_WALLET_PK=" common.env; then
+  sudo sed -i "s|PARENTNET_WALLET_PK=.*|PARENTNET_WALLET_PK=$WALLET_PRIVATE_KEY|" common.env
+else
+  printf "\nPARENTNET_WALLET_PK=$WALLET_PRIVATE_KEY\n" | sudo tee -a common.env
+fi
+
+if grep -q "PARENTNET_WALLET=" common.env; then
+  sudo sed -i "s|PARENTNET_WALLET=.*|PARENTNET_WALLET=$PARENTNET_WALLET_PK|" common.env
+else
+  printf "\nPARENTNET_WALLET=$PARENTNET_WALLET_PK\n" | sudo tee -a common.env
+fi
+
+if grep -q "PARENTNET_URL=" common.env; then
+  sudo sed -i "s|PARENTNET_URL=.*|PARENTNET_URL=$PARENTNET_URL|" common.env
+else
+  printf "\nPARENTNET_URL=$PARENTNET_URL\n" | sudo tee -a common.env
+fi
+
+
+output=$(sudo docker run --env-file common.env \
+    -v $(pwd)/../generated/:/app/config \
+    --network host \
+    --entrypoint './docker/deploy_proxy.sh' xinfinorg/csc:v0.1.1)
+    
+eth_address=$(echo $output | grep -o -E '0x[a-fA-F0-9]{40}')
+echo $eth_address
+
+if grep -q "CHECKPOINT_CONTRACT=" common.env; then
+  sudo sed -i "s|CHECKPOINT_CONTRACT=.*|CHECKPOINT_CONTRACT=$eth_address|" common.env
+else
+  printf "\nCHECKPOINT_CONTRACT=$eth_address\n" | sudo tee -a common.env
+fi
+curl -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"eth_syncing","params":[],"id":1}' $PARENTNET_URL
 
 sudo docker compose --env-file docker-compose.env --profile services pull
 sudo docker compose --env-file docker-compose.env --profile services up -d
