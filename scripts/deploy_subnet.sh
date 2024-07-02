@@ -10,17 +10,20 @@ fi
 PARENTNET_WALLET_PK=$1
 WALLET_PRIVATE_KEY=$2
 PARENTNET_URL=$3
-
-sudo apt-get update
+RELAYER=False
 
 # Install packages to allow apt to use a repository over HTTPS
-sudo apt-get install \
+sudo apt-get update
+sudo apt-get install -y \
     apt-transport-https \
     ca-certificates \
     curl \
     gnupg \
     lsb-release \
-    apt install npm
+    moreutils
+
+# Install npm separately
+sudo apt-get install -y npm
 
 # Add Docker’s official GPG key
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
@@ -45,8 +48,8 @@ echo "Created docker.env"
 
 # Update the env file
 NETWORK_NAME="xdcsubnet"
-NUM_MACHINE="1"
-NUM_SUBNET="3"
+NUM_MACHINE="3"
+NUM_SUBNET="5"
 MAIN_IP=$(curl -s ifconfig.me)
 PARENTNET="devnet"
 
@@ -60,17 +63,11 @@ sed -i "s|PARENTNET_WALLET_PK=.*|PARENTNET_WALLET=$PARENTNET_WALLET_PK|" docker.
 grep -q '^PARENTCHAIN_WALLET_PK=' docker.env || echo "PARENTCHAIN_WALLET_PK=$WALLET_PRIVATE_KEY" >> docker.env
 grep -q '^PRIVATE_KEY=' docker.env || echo "PRIVATE_KEY=$WALLET_PRIVATE_KEY" >> docker.env
 
-sudo docker pull xinfinorg/subnet-generator:latest
+sudo curl -O https://raw.githubusercontent.com/XinFinOrg/XinFin-Node/master/subnet/deployment-generator/script/generate.sh
 
-sudo docker run --env-file docker.env -v $(pwd)/generated:/app/generated xinfinorg/subnet-generator:latest && cd generated
-
-sudo docker compose --env-file docker-compose.env --profile machine1 pull
-sudo docker compose --env-file docker-compose.env --profile machine1 up -d
-
-cd ../
-
-sudo docker run --env-file docker.env -v $(pwd)/generated:/app/generated xinfinorg/subnet-generator:latest && cd generated
-
+sudo chmod +x generate.sh
+sudo ./generate.sh
+cd generated
 
 if grep -q "PARENTNET_WALLET_PK=" common.env; then
   sudo sed -i "s|PARENTNET_WALLET_PK=.*|PARENTNET_WALLET_PK=$WALLET_PRIVATE_KEY|" common.env
@@ -90,27 +87,22 @@ else
   printf "\nPARENTNET_URL=$PARENTNET_URL\n" | sudo tee -a common.env
 fi
 
-
-output=$(sudo docker run --env-file common.env \
-    -v $(pwd)/../generated/:/app/config \
-    --network host \
-    --entrypoint './docker/deploy_proxy.sh' xinfinorg/csc:v0.1.1)
-    
-eth_address=$(echo $output | grep -o -E '0x[a-fA-F0-9]{40}')
-echo $eth_address
-
-if grep -q "CHECKPOINT_CONTRACT=" common.env; then
-  sudo sed -i "s|CHECKPOINT_CONTRACT=.*|CHECKPOINT_CONTRACT=$eth_address|" common.env
-else
-  printf "\nCHECKPOINT_CONTRACT=$eth_address\n" | sudo tee -a common.env
-fi
-curl -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"eth_syncing","params":[],"id":1}' $PARENTNET_URL
-
+#start the subnet services stats & frontend
 sudo docker compose --env-file docker-compose.env --profile services pull
 sudo docker compose --env-file docker-compose.env --profile services up -d
 
+#start subnet nodes machine1
+sudo docker compose --env-file docker-compose.env --profile machine1 pull
+sudo docker compose --env-file docker-compose.env --profile machine1 up -d
 
+#start subnet nodes machine2
+sudo docker compose --env-file docker-compose.env --profile machine2 pull
+sudo docker compose --env-file docker-compose.env --profile machine2 up -d
 
+#start subnet nodes machine3
+sudo docker compose --env-file docker-compose.env --profile machine3 pull
+sudo docker compose --env-file docker-compose.env --profile machine3 up -d
 
+sudo docker logs -f generated-subnet1-1
 
 
