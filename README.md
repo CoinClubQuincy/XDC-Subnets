@@ -20,7 +20,7 @@ This script is used to deploy a subnet on XinFin Network.
 3. Run the script with your wallet address and private key as arguments:
 
 ```bash
-./deploy_subnet.sh YourWalletAddress YourWalletPrivateKey
+./deploy_subnet.sh YourWalletAddress YourWalletPrivateKey  networkRPC
 ```
 
 # AWS Subnet Deployment
