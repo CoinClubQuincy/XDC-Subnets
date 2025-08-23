@@ -10,41 +10,42 @@ Parameters:
     Type: List<AWS::EC2::Subnet::Id>
     Description: Enter the IDs of the subnets where the Load Balancer will be deployed.
 
-  Address:
-    Type: String
-    Description: Enter the address to be passed to the shell script.
-
-  privateKey:
-    Type: String
-    Description: Enter the Key to be passed to the shell script. - [for TESTING PURPOSES ONLY]
+  SeedSubnetId:
+    Type: 'AWS::EC2::Subnet::Id'
+    Description: Subnet for the persistent SeedNode (pick an AZ that supports your chosen instance type).
 
   MinSize:
     Type: Number
+    Default: 1
     Description: The minimum size of the auto scaling group.
 
   MaxSize:
     Type: Number
+    Default: 3
     Description: The maximum size of the auto scaling group.
 
   DesiredCapacity:
     Type: Number
+    Default: 1
     Description: The desired capacity of the auto scaling group.
 
   instanceSize:
     Type: String
     Description: The size of the instance.
-    Default: t2.micro
-    AllowedValues: 
-      - t2.micro
-      - t2.small
-      - t2.medium
-      - t2.large
+    Default: t3.medium
+    AllowedValues:
+      - t3.small
+      - t3.medium
+      - t3.large
       - m5.large
-      - m5.xlarge
-      - m5.2xlarge
-      - m5.4xlarge
-      - m5.12xlarge
-      - m5.24xlarge
+
+Mappings:
+  RegionMap:
+    us-east-1:     { Ami: "ami-0bbdd8c17ed981ef9" }
+    us-east-2:     { Ami: "ami-0d9a665f802ae6227" }
+    us-west-1:     { Ami: "ami-0ddac4b9aed8d5d46" }
+    us-west-2:     { Ami: "ami-065778886ef8ec7c8" }
+
 
 Resources:
   MySecurityGroup:
@@ -64,150 +65,408 @@ Resources:
           FromPort: 443
           IpProtocol: tcp
           ToPort: 443
+        - CidrIp: 0.0.0.0/0
+          FromPort: 5213
+          IpProtocol: tcp
+          ToPort: 5213
+        - CidrIp: 0.0.0.0/0
+          FromPort: 5214
+          IpProtocol: tcp
+          ToPort: 5214
+        - CidrIp: 0.0.0.0/0
+          FromPort: 8545
+          IpProtocol: tcp
+          ToPort: 8545
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
       VpcId: !Ref ExistingVpcId
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: EC2VolumeSnapshotAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeVolumes
+                  - ec2:DescribeSnapshots
+                  - ec2:CreateVolume
+                  - ec2:AttachVolume
+                  - ec2:CreateTags
+                  - ec2:ModifyInstanceAttribute
+                  - ec2:DescribeAvailabilityZones
+                  - ec2:DescribeSubnets
+                Resource: "*"
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+        - !Ref InstanceRole
+
+  SeedNode:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ RegionMap, !Ref "AWS::Region", Ami ]
+      InstanceType: !Ref instanceSize
+      IamInstanceProfile: !Ref InstanceProfile
+      NetworkInterfaces:
+        - DeviceIndex: 0
+          AssociatePublicIpAddress: true
+          GroupSet:
+            - !Ref MySecurityGroup
+          SubnetId: !Ref SeedSubnetId
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            DeleteOnTermination: true
+            VolumeSize: 30
+        - DeviceName: /dev/sdf
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: 200
+            DeleteOnTermination: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-seed"
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          set -eox pipefail
+          exec > >(tee -a /var/log/seed-bootstrap.log) 2>&1
+
+          # Write the real bootstrap into a literal script so CFN won't touch ${...}
+          cat > /root/seed-bootstrap.sh <<'EOS'
+          #!/bin/bash
+          export DEBIAN_FRONTEND=noninteractive
+          set -eox pipefail
+          exec > >(tee -a /var/log/seed-bootstrap.log) 2>&1
+
+          # Basic egress check
+          curl -sSf https://aws.amazon.com >/dev/null || { echo "No internet egress"; exit 1; }
+
+          # Token-aware metadata helper
+          md() {
+            TOKEN=$(curl -sX PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" || true)
+            if [ -n "$TOKEN" ]; then
+              curl -s -H "X-aws-ec2-metadata-token: $TOKEN" "http://169.254.169.254/latest/$1"
+            else
+              curl -s "http://169.254.169.254/latest/$1"
+            fi
+          }
+          AZ=$(md meta-data/placement/availability-zone)
+          REGION=$(echo "$AZ" | sed 's/.$//')
+          INSTANCE_ID=$(md meta-data/instance-id)
+
+          # retry helper
+          retry() { n=0; until "$@"; do n=$((n+1)); [ "$n" -ge 5 ] && return 1; echo "retry $n: $*"; sleep 3; done; }
+
+          # Wait for /dev/sdf to appear (NVMe naming may map to /dev/nvme1n1)
+          DEVICE="/dev/sdf"
+          for i in {1..20}; do
+            [ -e "$DEVICE" ] && break
+            DEVICE="/dev/nvme1n1"
+            [ -e "$DEVICE" ] && break
+            sleep 3
+          done
+          if [ ! -e "$DEVICE" ]; then
+            echo "Seed data device not found"; exit 1
+          fi
+
+          # If fresh volume, mkfs; if snapshot later, it'll already have a FS
+          blkid "$DEVICE" || mkfs.ext4 -F "$DEVICE"
+          mkdir -p /home/ubuntu/xdc-data
+          echo "$DEVICE /home/ubuntu/xdc-data ext4 defaults,nofail 0 2" >> /etc/fstab
+          mount -a
+          chown -R ubuntu:ubuntu /home/ubuntu/xdc-data
+
+          # Install AWS CLI v2 (for tagging)
+          retry apt-get update -y
+          retry apt-get install -y unzip curl
+          retry curl -sSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o awscliv2.zip
+          retry unzip -q awscliv2.zip && ./aws/install || true
+          rm -rf aws awscliv2.zip
+
+          # Tag the attached data volume with Role=SeedChainData so DLM can find it
+          VOL_ID=$(lsblk -no SERIAL "$DEVICE" 2>/dev/null || true)
+          if [ -z "$VOL_ID" ]; then
+            # Fallback: query volume by attachment mapping
+            VOL_ID=/usr/local/bin/aws ec2 describe-volumes --region "$REGION" \
+              --filters "Name=attachment.instance-id,Values=$INSTANCE_ID" \
+                        "Name=attachment.device,Values=/dev/sdf" \
+              --query "Volumes[0].VolumeId" --output text 2>/dev/null
+            if [ "$VOL_ID" = "None" ] || [ -z "$VOL_ID" ]; then
+              VOL_ID=$(/usr/local/bin/aws ec2 describe-volumes --region "$REGION" \
+                --filters "Name=attachment.instance-id,Values=$INSTANCE_ID" \
+                --query "Volumes[?Attachments[0].Device==\`/dev/sdf\` || Attachments[0].Device==\`/dev/nvme1n1\`][0].VolumeId" \
+                --output text 2>/dev/null)
+            fi
+          fi
+          if [ -n "$VOL_ID" ] && [ "$VOL_ID" != "None" ]; then
+            /usr/local/bin/aws ec2 create-tags --region "$REGION" --resources "$VOL_ID" --tags Key=Role,Value=SeedChainData
+          else
+            echo "Could not resolve VOL_ID for seed data volume"
+          fi
+          EOS
+
+          chmod +x /root/seed-bootstrap.sh
+          /root/seed-bootstrap.sh
 
   MyAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 0
+        MaxBatchSize: 1
+        PauseTime: PT5M
+        WaitOnResourceSignals: false
+        SuspendProcesses:
+          - HealthCheck
+          - ReplaceUnhealthy
+          - AZRebalance
+          - AlarmNotification
+          - ScheduledActions
+      AutoScalingReplacingUpdate:
+        WillReplace: true
     Properties:
-      AvailabilityZones: !Split [ ",", !Join [ ",", !GetAZs "" ] ]
-      LaunchConfigurationName:
-        Ref: MyLaunchConfig
+      LaunchTemplate:
+        LaunchTemplateId: !Ref MyLaunchTemplate
+        Version: !GetAtt MyLaunchTemplate.LatestVersionNumber
       MinSize: !Ref MinSize
       MaxSize: !Ref MaxSize
       DesiredCapacity: !Ref DesiredCapacity
       VPCZoneIdentifier: !Ref LoadBalancerSubnets
+      TargetGroupARNs:
+        - !Ref MyTargetGroup
+        - !Ref RpcTargetGroup
+      HealthCheckType: EC2
+      HealthCheckGracePeriod: 900
       Tags:
         - Key: Name
           Value: !Ref AWS::StackName
           PropagateAtLaunch: true
 
-  MyLaunchConfig:
-    Type: AWS::AutoScaling::LaunchConfiguration
+
+  MyLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
     Properties:
-      ImageId: ami-0827b6c5b977c020e
-      InstanceType: !Ref instanceSize
-      SecurityGroups:
-        - !Ref MySecurityGroup
-      UserData:
-        Fn::Base64: !Sub |
-        #!/bin/bash
+      LaunchTemplateData:
+        ImageId: !FindInMap [ RegionMap, !Ref "AWS::Region", Ami ]
+        InstanceType: !Ref instanceSize
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+        MetadataOptions:
+          HttpTokens: required
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: true
+            Groups:
+              - !Ref MySecurityGroup
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              VolumeType: gp3
+              VolumeSize: 50
+              DeleteOnTermination: true
+        UserData:
+          Fn::Base64: |
+            #!/bin/bash
+            set -eox pipefail
+            exec > >(tee -a /var/log/subnet-bootstrap.log) 2>&1
 
-        PARENTNET_WALLET_PK=$1
-        WALLET_PRIVATE_KEY=$2
-        PARENTNET_URL=$3
+            # Write the real bootstrap into a literal script so CFN won't touch ${...}
+            cat > /root/asg-bootstrap.sh <<'EOS'
+            #!/bin/bash
+            # Minimal, robust XDC Subnet bootstrap — runs on first boot
+            export DEBIAN_FRONTEND=noninteractive
+            curl -sSf https://aws.amazon.com >/dev/null || { echo "No internet egress"; exit 1; }
 
-        sudo apt-get update
+            # Safer bash flags but avoid 'set -u' (nounset) to prevent unbound var crashes
+            set -eox pipefail
+            exec > >(tee -a /var/log/subnet-bootstrap.log) 2>&1
 
-        # Install packages to allow apt to use a repository over HTTPS
-        sudo apt-get install \
-            apt-transport-https \
-            ca-certificates \
-            curl \
-            gnupg \
-            lsb-release \
-            apt install npm
+            # --- Base system + Docker ---
+            retry() { n=0; until "$@"; do n=$((n+1)); [ "$n" -ge 5 ] && return 1; echo "retry $n: $*"; sleep 3; done; }
+            retry apt-get update -y
+            retry apt-get install -y ca-certificates curl gnupg lsb-release unzip
+            install -m 0755 -d /etc/apt/keyrings
+            retry curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+            chmod a+r /etc/apt/keyrings/docker.gpg
+            echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+            retry apt-get update -y
+            retry apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-        # Add Docker’s official GPG key
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+            # AWS CLI v2 (needed for snapshot/volume ops in ASG bootstrap)
+            retry curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            retry unzip -q awscliv2.zip
+            ./aws/install || true
+            rm -rf aws awscliv2.zip
+            export PATH=/usr/local/bin:$PATH
 
-        # Set up the stable repository
-        echo \
-          "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
-          $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            systemctl enable --now docker
+            usermod -aG docker ubuntu
 
-        # Update the apt package index, and install Docker engine
-        sudo apt-get update
-        sudo apt-get install docker-ce docker-ce-cli containerd.io
+            # --- Run the rest as the 'ubuntu' user in a fresh login shell ---
+            su -l ubuntu <<'EOSU'
+            set -eox pipefail
+            export PATH="$PATH:/usr/local/bin"
+            curl -sSf https://aws.amazon.com >/dev/null || { echo "No internet egress (ubuntu shell)"; exit 1; }
 
-        git clone https://github.com/XinFinOrg/XinFin-Node.git
-        echo "Cloned XinFin-Node"
+            # Metadata (token-aware)
+            md() {
+              TOKEN=$(curl -sX PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" || true)
+              if [ -n "$TOKEN" ]; then
+                curl -s -H "X-aws-ec2-metadata-token: $TOKEN" "http://169.254.169.254/latest/$1"
+              else
+                curl -s "http://169.254.169.254/latest/$1"
+              fi
+            }
+            AZ=$(md meta-data/placement/availability-zone)
+            REGION=$(echo "$AZ" | sed 's/.$//')
+            INSTANCE_ID=$(md meta-data/instance-id)
 
-        cd XinFin-Node/subnet/deployment-generator/
-        echo "Cloned XinFin-Node"
+            # Restore seed snapshot to a new gp3 volume and mount at /home/ubuntu/xdc-data
+            LATEST_SNAP=$(aws ec2 describe-snapshots --region "$REGION" \
+              --filters "Name=tag:Role,Values=SeedChainData" "Name=status,Values=completed" \
+              --query "sort_by(Snapshots,&StartTime)[-1].SnapshotId" --output text || true)
 
-        cp script/docker.env.example docker.env
-        echo "Created docker.env"
+            if [ -n "$LATEST_SNAP" ] && [ "$LATEST_SNAP" != "None" ]; then
+              echo "Creating data volume from $LATEST_SNAP"
+              VOL_ID=$(aws ec2 create-volume --region "$REGION" \
+                --availability-zone "$AZ" \
+                --snapshot-id "$LATEST_SNAP" \
+                --volume-type gp3 \
+                --tag-specifications 'ResourceType=volume,Tags=[{Key=Role,Value=ASGData}]' \
+                --query "VolumeId" --output text)
 
-        # Update the env file
-        NETWORK_NAME="xdcsubnet"
-        NUM_MACHINE="1"
-        NUM_SUBNET="3"
-        MAIN_IP=$(curl -s ifconfig.me)
-        PARENTNET="devnet"
+              # Wait for creation
+              for _ in $(seq 1 40); do
+                ST=$(aws ec2 describe-volumes --region "$REGION" --volume-ids "$VOL_ID" \
+                  --query "Volumes[0].State" --output text 2>/dev/null || echo "creating")
+                [ "$ST" = "available" ] && break
+                sleep 3
+              done
 
-        grep -q '^CONFIG_PATH=' docker.env || sed -i'' '1iCONFIG_PATH='"$PWD" docker.env
-        sed -i "s|NETWORK_NAME=.*|NETWORK_NAME=$NETWORK_NAME|" docker.env
-        sed -i "s|NUM_MACHINE=.*|NUM_MACHINE=$NUM_MACHINE|" docker.env
-        sed -i "s|NUM_SUBNET=.*|NUM_SUBNET=$NUM_SUBNET|" docker.env
-        sed -i "s|MAIN_IP=.*|MAIN_IP=$MAIN_IP|" docker.env
-        sed -i "s|PARENTNET=.*|PARENTNET=$PARENTNET|" docker.env
-        sed -i "s|PARENTNET_WALLET_PK=.*|PARENTNET_WALLET=$PARENTNET_WALLET_PK|" docker.env
-        grep -q '^PARENTCHAIN_WALLET_PK=' docker.env || echo "PARENTCHAIN_WALLET_PK=$WALLET_PRIVATE_KEY" >> docker.env
-        grep -q '^PRIVATE_KEY=' docker.env || echo "PRIVATE_KEY=$WALLET_PRIVATE_KEY" >> docker.env
+              # Attach at /dev/sdf (Nitro => /dev/nvme1n1)
+              aws ec2 attach-volume --region "$REGION" --volume-id "$VOL_ID" \
+                --instance-id "$INSTANCE_ID" --device /dev/sdf
 
-        sudo docker pull xinfinorg/subnet-generator:latest
+              # Ensure the attached data volume is cleaned up on scale-in
+              aws ec2 modify-instance-attribute --region "$REGION" --instance-id "$INSTANCE_ID" \
+                --block-device-mappings "[{\"DeviceName\":\"/dev/sdf\",\"Ebs\":{\"DeleteOnTermination\":true}}]"
 
-        sudo docker run --env-file docker.env -v $(pwd)/generated:/app/generated xinfinorg/subnet-generator:latest && cd generated
+              DEV="/dev/nvme1n1"; for _ in $(seq 1 40); do [ -e "$DEV" ] && break; sleep 3; done
+              sudo mkdir -p /home/ubuntu/xdc-data
+              if ! sudo blkid "$DEV" >/dev/null 2>&1; then
+                sudo mkfs.ext4 -F "$DEV"
+              fi
+              echo "$DEV /home/ubuntu/xdc-data ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab
+              sudo mount -a
+              sudo chown -R ubuntu:ubuntu /home/ubuntu/xdc-data
+            else
+              echo "No seed snapshot found; creating fresh data dir"
+              sudo mkdir -p /home/ubuntu/xdc-data
+              sudo chown -R ubuntu:ubuntu /home/ubuntu/xdc-data
+            fi
 
-        sudo docker compose --env-file docker-compose.env --profile machine1 pull
-        sudo docker compose --env-file docker-compose.env --profile machine1 up -d
+            # Workspace
+            mkdir -p ~/xdc-subnet && cd ~/xdc-subnet
 
-        cd ../
+            # Simple retry helper
+            retry() { n=0; until "$@"; do n=$((n+1)); [ "$n" -ge 5 ] && return 1; echo "retry $n: $*"; sleep 3; done; }
 
-        sudo docker run --env-file docker.env -v $(pwd)/generated:/app/generated xinfinorg/subnet-generator:latest && cd generated
+            # Discover public IP (fallback to local)
+            MAIN_IP=$(curl -s --max-time 5 https://ifconfig.me || hostname -I | awk '{print $1}')
 
+            # Prepare generator env
+            cat > docker.env <<EOF
+            NETWORK_NAME=Nuclei Network
+            NUM_MACHINE=1
+            NUM_SUBNET=3
+            MAIN_IP=$MAIN_IP
+            CONFIG_PATH=$PWD
+            PARENTNET=devnet
+            PARENTNET_WALLET_PK=
+            EOF
 
-        if grep -q "PARENTNET_WALLET_PK=" common.env; then
-          sudo sed -i "s|PARENTNET_WALLET_PK=.*|PARENTNET_WALLET_PK=$WALLET_PRIVATE_KEY|" common.env
-        else
-          printf "\nPARENTNET_WALLET_PK=$WALLET_PRIVATE_KEY\n" | sudo tee -a common.env
-        fi
+            echo "docker.env:"; cat docker.env
 
-        if grep -q "PARENTNET_WALLET=" common.env; then
-          sudo sed -i "s|PARENTNET_WALLET=.*|PARENTNET_WALLET=$PARENTNET_WALLET_PK|" common.env
-        else
-          printf "\nPARENTNET_WALLET=$PARENTNET_WALLET_PK\n" | sudo tee -a common.env
-        fi
+            # Generate docker compose files
+            retry docker pull xinfinorg/subnet-generator:latest
+            retry docker run --env-file docker.env -v "$PWD/generated:/app/generated" xinfinorg/subnet-generator:latest
 
-        if grep -q "PARENTNET_URL=" common.env; then
-          sudo sed -i "s|PARENTNET_URL=.*|PARENTNET_URL=$PARENTNET_URL|" common.env
-        else
-          printf "\nPARENTNET_URL=$PARENTNET_URL\n" | sudo tee -a common.env
-        fi
+            cd generated
 
+            # Bind data path
+            if grep -q "^DATA_DIR=" common.env 2>/dev/null; then
+              sed -i "s|^DATA_DIR=.*|DATA_DIR=/home/ubuntu/xdc-data|" common.env
+            else
+              printf "\nDATA_DIR=/home/ubuntu/xdc-data\n" >> common.env
+            fi
+            # Best effort: replace any default ./data paths with /home/ubuntu/xdc-data in docker-compose.yml
+            sed -i "s|\./data|/home/ubuntu/xdc-data|g" docker-compose.yml || true
 
-        output=$(sudo docker run --env-file common.env \
-            -v $(pwd)/../generated/:/app/config \
-            --network host \
-            --entrypoint './docker/deploy_proxy.sh' xinfinorg/csc:v0.1.1)
-            
-        eth_address=$(echo $output | grep -o -E '0x[a-fA-F0-9]{40}')
-        echo $eth_address
+            # Bring up nodes then services
+            retry docker compose --env-file docker-compose.env --profile machine1 pull
+            docker compose --env-file docker-compose.env --profile machine1 up -d
 
-        if grep -q "CHECKPOINT_CONTRACT=" common.env; then
-          sudo sed -i "s|CHECKPOINT_CONTRACT=.*|CHECKPOINT_CONTRACT=$eth_address|" common.env
-        else
-          printf "\nCHECKPOINT_CONTRACT=$eth_address\n" | sudo tee -a common.env
-        fi
-        curl -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"eth_syncing","params":[],"id":1}' $PARENTNET_URL
+            # Public URLs
+            if grep -q "^VITE_SUBNET_URL=" common.env; then
+              sed -i "s|^VITE_SUBNET_URL=.*|VITE_SUBNET_URL=http://$MAIN_IP:5213|" common.env
+            else
+              printf "\nVITE_SUBNET_URL=http://$MAIN_IP:5213\n" >> common.env
+            fi
+            if grep -q "^VITE_SUBNET_RPC=" common.env; then
+              sed -i "s|^VITE_SUBNET_RPC=.*|VITE_SUBNET_RPC=http://$MAIN_IP:8545|" common.env
+            else
+              printf "\nVITE_SUBNET_RPC=http://$MAIN_IP:8545\n" >> common.env
+            fi
 
-        sudo docker compose --env-file docker-compose.env --profile services pull
-        sudo docker compose --env-file docker-compose.env --profile services up -d
+            # Expose ports for stats/frontend
+            if grep -Eq "^[[:space:]]*stats:" docker-compose.yml; then
+              sed -i "/^[[:space:]]*stats:/,/^[^[:space:]]/ s/^[[:space:]]*- .*:5213:5213/      - '0.0.0.0:5213:5213'/" docker-compose.yml || true
+            fi
+            if grep -Eq "^[[:space:]]*frontend:" docker-compose.yml; then
+              sed -i "/^[[:space:]]*frontend:/,/^[^[:space:]]/ s/^[[:space:]]*- .*:5214:5214/      - '0.0.0.0:5214:5214'/" docker-compose.yml || true
+            fi
 
+            retry docker compose --env-file docker-compose.env --profile services pull
+            docker compose --env-file docker-compose.env --profile services up -d
 
+            # Restart frontend to apply env/ports
+            docker compose --env-file docker-compose.env --profile services down frontend || true
+            docker compose --env-file docker-compose.env --profile services up -d frontend
 
+            echo "==== docker ps ===="; docker ps
+            EOSU
 
+            echo "XDC Subnet bootstrap complete."
+            EOS
 
+            chmod +x /root/asg-bootstrap.sh
+            /root/asg-bootstrap.sh
 
-
-          
-    DependsOn: MySecurityGroup 
 
   MyLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Subnets:
-        !Ref LoadBalancerSubnets 
+      Subnets: !Ref LoadBalancerSubnets
       SecurityGroups:
         - !Ref MySecurityGroup
     DependsOn: MySecurityGroup 
@@ -215,8 +474,15 @@ Resources:
   MyTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Port: 80
+      Port: 5214
       Protocol: HTTP
+      TargetType: instance
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckPort: traffic-port
+      Matcher:
+        HttpCode: '200-399'
       VpcId: !Ref ExistingVpcId
 
   MyListener:
@@ -226,13 +492,99 @@ Resources:
         - Type: fixed-response
           FixedResponseConfig:
             ContentType: text/plain
+            MessageBody: OK
             StatusCode: 200
       LoadBalancerArn:
         Ref: MyLoadBalancer
       Port: 80
       Protocol: HTTP
 
+  RpcTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref ExistingVpcId
+      Protocol: TCP
+      Port: 8545
+      TargetType: instance
+      HealthCheckProtocol: TCP
+      HealthCheckPort: traffic-port
+
+  RpcNLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: network
+      Subnets: !Ref LoadBalancerSubnets
+
+  RpcListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref RpcNLB
+      Port: 8545
+      Protocol: TCP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref RpcTargetGroup
+
+  SeedDataSnapshotPolicy:
+    Type: AWS::DLM::LifecyclePolicy
+    Properties:
+      Description: Snapshot policy for XDC seed data volume
+      State: ENABLED
+      ExecutionRoleArn: !GetAtt DLMRole.Arn
+      PolicyDetails:
+        ResourceTypes: [ VOLUME ]
+        TargetTags:
+          - Key: Role
+            Value: SeedChainData
+        Schedules:
+          - Name: Every6Hours
+            CreateRule:
+              Interval: 6
+              IntervalUnit: HOURS
+              Times: [ "00:00" ]
+            RetainRule:
+              Count: 28
+            CopyTags: true
+  DLMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: dlm.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: DLMDefault
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:CreateSnapshot
+                  - ec2:DeleteSnapshot
+                  - ec2:DescribeInstances
+                  - ec2:DescribeVolumes
+                  - ec2:DescribeSnapshots
+                  - ec2:CreateTags
+                  - ec2:DeleteTags
+                Resource: "*"
+
 Outputs:
   LoadBalancerDNSName:
     Description: DNS name of the load balancer
     Value: !GetAtt MyLoadBalancer.DNSName
+
+  TargetGroupArn:
+    Description: ARN of the target group
+    Value: !Ref MyTargetGroup
+
+  SeedPublicDNS:
+    Description: Public DNS of the persistent seed node
+    Value: !GetAtt SeedNode.PublicDnsName
+
+  SnapshotPolicyId:
+    Description: DLM policy id for seed data snapshots
+    Value: !Ref SeedDataSnapshotPolicy
