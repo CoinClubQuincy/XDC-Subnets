@@ -1,3 +1,23 @@
+# Node modules
+/node_modules
 
-scripts/XinFin-Node/
-/XinFin-Node
+# Compilation output
+/dist
+
+# pnpm deploy output
+/bundle
+
+# Hardhat Build Artifacts
+/artifacts
+
+# Hardhat compilation (v2) support directory
+/cache
+
+# Typechain output
+/types
+
+# Hardhat coverage reports
+/coverage
+node_modules
+/node_modules
+/node_modules

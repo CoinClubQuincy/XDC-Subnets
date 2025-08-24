@@ -21,7 +21,11 @@ Parameters:
 
   MaxSize:
     Type: Number
-    Default: 3
+    Default: 5
+    AllowedValues:
+      - 3
+      - 5
+      - 10
     Description: The maximum size of the auto scaling group.
 
   DesiredCapacity:
@@ -38,6 +42,26 @@ Parameters:
       - t3.medium
       - t3.large
       - m5.large
+
+  SubnetGeneratorTag:
+    Type: String
+    Default: "v0.1.1"
+    Description: Docker tag for xinfinorg/subnet-generator (pin to avoid 'latest').
+
+  SSMParamPath:
+    Type: String
+    Default: "/xdc"
+    Description: SSM Parameter Store path prefix containing config (e.g., /xdc/*).
+
+  ParentnetWalletParam:
+    Type: String
+    Default: "/xdc/parentnet/wallet_pk"
+    Description: SSM parameter name for PARENTNET_WALLET_PK (SecureString).
+
+  ExtraEnvParam:
+    Type: String
+    Default: "/xdc/extra/env"
+    Description: (Optional) SSM parameter name for additional env lines to append.
 
 Mappings:
   RegionMap:
@@ -95,6 +119,7 @@ Resources:
       Path: "/"
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
       Policies:
         - PolicyName: EC2VolumeSnapshotAccess
           PolicyDocument:
@@ -111,6 +136,24 @@ Resources:
                   - ec2:ModifyInstanceAttribute
                   - ec2:DescribeAvailabilityZones
                   - ec2:DescribeSubnets
+                  - autoscaling:CompleteLifecycleAction
+                  - autoscaling:RecordLifecycleActionHeartbeat
+                  - autoscaling:DescribeAutoScalingGroups
+                Resource: "*"
+        - PolicyName: SSMAndSecretsAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:GetParametersByPath
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMParamPath}*"
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
                 Resource: "*"
 
   InstanceProfile:
@@ -144,7 +187,7 @@ Resources:
             DeleteOnTermination: false
       Tags:
         - Key: Name
-          Value: !Sub "${AWS::StackName}-seed"
+          Value: !Sub "${AWS::StackName}-sync-node"
       UserData:
         Fn::Base64: |
           #!/bin/bash
@@ -223,6 +266,38 @@ Resources:
           else
             echo "Could not resolve VOL_ID for seed data volume"
           fi
+
+          # CloudWatch Agent for seed logs (Ubuntu: install via .deb)
+          tmpdir=$(mktemp -d)
+          cd "$tmpdir"
+          retry curl -fsSLo amazon-cloudwatch-agent.deb "https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb" || true
+          if [ -s amazon-cloudwatch-agent.deb ]; then
+            dpkg -i -E ./amazon-cloudwatch-agent.deb || apt-get -f install -y || true
+          else
+            echo "CloudWatch agent .deb not downloaded, skipping install"
+          fi
+          cd /
+          rm -rf "$tmpdir"
+          cat >/opt/aws/amazon-cloudwatch-agent/bin/config.json <<'CWCFG'
+          {
+            "logs": {
+              "logs_collected": {
+                "files": {
+                  "collect_list": [
+                    { "file_path": "/var/log/seed-bootstrap.log", "log_group_name": "/xdc/seed/bootstrap", "log_stream_name": "{instance_id}", "timestamp_format": "%Y-%m-%d %H:%M:%S" }
+                  ]
+                }
+              }
+            }
+          }
+          CWCFG
+          if [ -x /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl ]; then
+            systemctl enable amazon-cloudwatch-agent || true
+            /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json || true
+          else
+            echo "CloudWatch agent not installed; skipping agent start"
+          fi
+
           EOS
 
           chmod +x /root/seed-bootstrap.sh
@@ -261,6 +336,15 @@ Resources:
         - Key: Name
           Value: !Ref AWS::StackName
           PropagateAtLaunch: true
+
+  BootstrapLifecycleHook:
+    Type: AWS::AutoScaling::LifecycleHook
+    Properties:
+      AutoScalingGroupName: !Ref MyAutoScalingGroup
+      LifecycleTransition: "autoscaling:EC2_INSTANCE_LAUNCHING"
+      LifecycleHookName: "WaitForBootstrap"
+      HeartbeatTimeout: 1800
+      DefaultResult: CONTINUE
 
 
   MyLaunchTemplate:
@@ -318,6 +402,38 @@ Resources:
             ./aws/install || true
             rm -rf aws awscliv2.zip
             export PATH=/usr/local/bin:$PATH
+
+            # CloudWatch Agent for logs (Ubuntu: install via .deb)
+            tmpdir=$(mktemp -d)
+            cd "$tmpdir"
+            retry curl -fsSLo amazon-cloudwatch-agent.deb "https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb" || true
+            if [ -s amazon-cloudwatch-agent.deb ]; then
+              sudo dpkg -i -E ./amazon-cloudwatch-agent.deb || sudo apt-get -f install -y || true
+            else
+              echo "CloudWatch agent .deb not downloaded, skipping install"
+            fi
+            cd /
+            rm -rf "$tmpdir"
+            cat >/opt/aws/amazon-cloudwatch-agent/bin/config.json <<'CWCFG'
+            {
+              "logs": {
+                "logs_collected": {
+                  "files": {
+                    "collect_list": [
+                      { "file_path": "/var/log/subnet-bootstrap.log", "log_group_name": "/xdc/asg/bootstrap", "log_stream_name": "{instance_id}", "timestamp_format": "%Y-%m-%d %H:%M:%S" },
+                      { "file_path": "/var/log/seed-bootstrap.log",   "log_group_name": "/xdc/seed/bootstrap", "log_stream_name": "{instance_id}", "timestamp_format": "%Y-%m-%d %H:%M:%S", "retention_in_days": 14 }
+                    ]
+                  }
+                }
+              }
+            }
+            CWCFG
+            if [ -x /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl ]; then
+              systemctl enable amazon-cloudwatch-agent || true
+              /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json || true
+            else
+              echo "CloudWatch agent not installed; skipping agent start"
+            fi
 
             systemctl enable --now docker
             usermod -aG docker ubuntu
@@ -394,6 +510,15 @@ Resources:
             # Discover public IP (fallback to local)
             MAIN_IP=$(curl -s --max-time 5 https://ifconfig.me || hostname -I | awk '{print $1}')
 
+            # Pull secrets/config from SSM Parameter Store
+            PARENTNET_WALLET_PK=$(aws ssm get-parameter --with-decryption --name "${ParentnetWalletParam}" --query "Parameter.Value" --output text 2>/dev/null || echo "")
+            EXTRA_ENV=$(aws ssm get-parameter --name "${ExtraEnvParam}" --query "Parameter.Value" --output text 2>/dev/null || echo "")
+
+            # Optional: append additional env lines from SSM
+            append_extra_env() {
+              [ -n "$EXTRA_ENV" ] && printf "%s\n" "$EXTRA_ENV" >> "$1" || true
+            }
+
             # Prepare generator env
             cat > docker.env <<EOF
             NETWORK_NAME=Nuclei Network
@@ -402,14 +527,19 @@ Resources:
             MAIN_IP=$MAIN_IP
             CONFIG_PATH=$PWD
             PARENTNET=devnet
-            PARENTNET_WALLET_PK=
+            PARENTNET_WALLET_PK=${PARENTNET_WALLET_PK}
             EOF
+            append_extra_env docker.env
 
             echo "docker.env:"; cat docker.env
 
-            # Generate docker compose files
-            retry docker pull xinfinorg/subnet-generator:latest
-            retry docker run --env-file docker.env -v "$PWD/generated:/app/generated" xinfinorg/subnet-generator:latest
+            # Generate docker compose files (image expects /mount/generated and a scripts/ dir)
+            GEN_TAG="${SubnetGeneratorTag}"
+            retry docker pull "xinfinorg/subnet-generator:${GEN_TAG}"
+            mkdir -p "$PWD/generated/scripts"
+            retry docker run --env-file docker.env \
+              -v "$PWD/generated:/mount/generated" \
+              "xinfinorg/subnet-generator:${GEN_TAG}"
 
             cd generated
 
@@ -452,6 +582,17 @@ Resources:
             # Restart frontend to apply env/ports
             docker compose --env-file docker-compose.env --profile services down frontend || true
             docker compose --env-file docker-compose.env --profile services up -d frontend
+
+            # Mark bootstrap complete
+            aws ec2 create-tags --region "$REGION" --resources "$INSTANCE_ID" --tags Key=Bootstrap,Value=Complete || true
+
+            # Best-effort lifecycle completion (DefaultResult is CONTINUE; this is optional)
+            ASG_NAME=$(aws autoscaling describe-auto-scaling-instances --instance-ids "$INSTANCE_ID" --query "AutoScalingInstances[0].AutoScalingGroupName" --output text 2>/dev/null || echo "")
+            if [ -n "$ASG_NAME" ] && [ "$ASG_NAME" != "None" ]; then
+              aws autoscaling complete-lifecycle-action --auto-scaling-group-name "$ASG_NAME" \
+                --lifecycle-hook-name "WaitForBootstrap" --instance-id "$INSTANCE_ID" \
+                --lifecycle-action-result CONTINUE --region "$REGION" || true
+            fi
 
             echo "==== docker ps ===="; docker ps
             EOSU
@@ -588,3 +729,34 @@ Outputs:
   SnapshotPolicyId:
     Description: DLM policy id for seed data snapshots
     Value: !Ref SeedDataSnapshotPolicy
+
+
+
+
+
+######################## Notes ########################
+
+# aws ssm put-parameter \
+#   --name "/xdc/parentnet/wallet_pk" \
+#   --type "SecureString" \
+#   --value "PASTE_YOUR_PRIVATE_KEY_HERE" \
+#   --overwrite \
+
+
+
+
+# # UserData status & logs
+# sudo cloud-init status --long
+# sudo tail -n 200 /var/log/subnet-bootstrap.log
+
+# # Volume + mount
+# lsblk
+# mount | grep xdc-data
+
+# # Docker
+# sudo systemctl is-active docker
+# docker ps
+
+# # Tag set by bootstrap
+# aws ec2 describe-tags --filters "Name=resource-id,Values=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)" \
+#   --region us-west-2 --query "Tags[?Key=='Bootstrap'].Value"

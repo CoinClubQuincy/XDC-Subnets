@@ -55,10 +55,10 @@ abstract contract NRC20 is ERC20, Ownable {
 }
 
 /**
- * @title Main Insight Derivative Token (MIDT)
+ * @title Primary Insight Derivative Token (MIDT)
  * @dev ERC20 with optional fee, URI metadata, and correct initial mint math.
  */
-abstract contract MIDT is NRC20 {
+abstract contract PIDT is NRC20 {
     string public uri;
 
     constructor(

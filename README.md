@@ -1,52 +1,57 @@
-# XDC-Subnets
-This is a simple and automated way to set up XDC subnets with script
-![subnets](https://github.com/CoinClubQuincy/XDC-Subnets/assets/16103963/c4765361-123a-4747-afcc-5611839081d9)
+# Sample Hardhat 3 Beta Project (`mocha` and `ethers`)
 
-# Subnet Deployment Script
-This script is used to deploy a subnet on XinFin Network.
+This project showcases a Hardhat 3 Beta project using `mocha` for tests and the `ethers` library for Ethereum interactions.
 
-## Prerequisites
+To learn more about the Hardhat 3 Beta, please visit the [Getting Started guide](https://hardhat.org/docs/getting-started#getting-started-with-hardhat-3). To share your feedback, join our [Hardhat 3 Beta](https://hardhat.org/hardhat3-beta-telegram-group) Telegram group or [open an issue](https://github.com/NomicFoundation/hardhat/issues/new) in our GitHub issue tracker.
 
-- Docker installed on your machine
-- Bash shell (Unix shell)
-- Git installed on your machine
+## Project Overview
+
+This example project includes:
+
+- A simple Hardhat configuration file.
+- Foundry-compatible Solidity unit tests.
+- TypeScript integration tests using `mocha` and ethers.js
+- Examples demonstrating how to connect to different types of networks, including locally simulating OP mainnet.
 
 ## Usage
 
-1. Clone this repository to your local machine.
+### Running Tests
 
-2. Navigate to the /scripts directory containing the `deploy_subnet.sh` script.
+To run all the tests in the project, execute the following command:
 
-3. Run the script with your wallet address and private key as arguments:
-
-```bash
-./deploy_subnet.sh YourWalletAddress YourWalletPrivateKey  networkRPC
+```shell
+npx hardhat test
 ```
 
-# AWS Subnet Deployment
+You can also selectively run the Solidity or `mocha` tests:
 
-This is an AWS CloudFormation template that deploys an EC2 Auto Scaling Group with a Load Balancer in an existing VPC.
+```shell
+npx hardhat test solidity
+npx hardhat test mocha
+```
 
-## Prerequisites
+### Make a deployment to Sepolia
 
-- AWS Account
-- Existing VPC and VPC Subnets
-- AWS CLI installed and configured
+This project includes an example Ignition module to deploy the contract. You can deploy this module to a locally simulated chain or to Sepolia.
 
-## Parameters
+To run the deployment to a local chain:
 
-- `ExistingVpcId`: The ID of an existing VPC.
-- `LoadBalancerSubnets`: The IDs of the subnets where the Load Balancer will be deployed.
-- `Address`: The address to be passed to the shell script.
-- `MinSize`: The minimum size of the auto scaling group.
-- `MaxSize`: The maximum size of the auto scaling group.
-- `DesiredCapacity`: The desired capacity of the auto scaling group.
+```shell
+npx hardhat ignition deploy ignition/modules/Counter.ts
+```
 
-## Usage
+To run the deployment to Sepolia, you need an account with funds to send the transaction. The provided Hardhat configuration includes a Configuration Variable called `SEPOLIA_PRIVATE_KEY`, which you can use to set the private key of the account you want to use.
 
-1. Save the template to a file, for example `template.yaml`.
+You can set the `SEPOLIA_PRIVATE_KEY` variable using the `hardhat-keystore` plugin or by setting it as an environment variable.
 
-2. Run the following command to create a CloudFormation stack:
+To set the `SEPOLIA_PRIVATE_KEY` config variable using `hardhat-keystore`:
 
-```bash
-aws cloudformation create-stack --stack-name MyStack --template-body file://template.yaml --parameters ParameterKey=ExistingVpcId,ParameterValue=<YourVPCId> ParameterKey=LoadBalancerSubnets,ParameterValue=<YourSubnetIds> ParameterKey=Address,ParameterValue=<YourAddress> ParameterKey=MinSize,ParameterValue=<YourMinSize> ParameterKey=MaxSize,ParameterValue=<YourMaxSize> ParameterKey=DesiredCapacity,ParameterValue=<YourDesiredCapacity>
+```shell
+npx hardhat keystore set SEPOLIA_PRIVATE_KEY
+```
+
+After setting the variable, you can run the deployment with the Sepolia network:
+
+```shell
+npx hardhat ignition deploy --network sepolia ignition/modules/Counter.ts
+```
