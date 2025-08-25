@@ -1,0 +1,14 @@
+version: 0.2
+phases:
+  install:
+    commands:
+      - echo "Installing build deps..."
+  build:
+    commands:
+      - mkdir -p package
+      - cp -R * package/
+artifacts:
+  files:
+    - appspec.yml
+    - scripts/**/*
+    - package/**/*

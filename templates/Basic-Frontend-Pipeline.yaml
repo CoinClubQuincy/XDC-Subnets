@@ -1,0 +1,319 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CodePipeline with CodeCommit (source), CodeBuild (build), and CodeDeploy (EC2) deploy
+
+Parameters:
+  RepositoryName:
+    Type: String
+    Description: Name for the new CodeCommit repository
+  RepositoryBranch:
+    Type: String
+    Default: main
+    Description: Branch to build/deploy (e.g., main)
+  ProjectName:
+    Type: String
+    Default: sample-app
+    Description: Logical name prefix for resources (no spaces)
+  EC2TagKey:
+    Type: String
+    Default: CodeDeploy
+    Description: EC2 tag key used to target instances for CodeDeploy
+  EC2TagValue:
+    Type: String
+    Default: Blue
+    Description: EC2 tag value used to target instances for CodeDeploy
+  BuildImage:
+    Type: String
+    Default: aws/codebuild/standard:7.0
+    Description: CodeBuild container image
+  BuildComputeType:
+    Type: String
+    Default: BUILD_GENERAL1_SMALL
+    AllowedValues:
+      - BUILD_GENERAL1_SMALL
+      - BUILD_GENERAL1_MEDIUM
+      - BUILD_GENERAL1_LARGE
+    Description: CodeBuild compute type
+
+Resources:
+  # S3 bucket for pipeline artifacts
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+
+  # CodeCommit repository
+  Repo:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: !Ref RepositoryName
+      RepositoryDescription: !Sub '${ProjectName} source repository'
+
+  # CodeDeploy Application (EC2/On-Prem)
+  CodeDeployApplication:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      ApplicationName: !Sub '${ProjectName}-App'
+      ComputePlatform: Server
+
+  # CodeDeploy Service Role
+  CodeDeployServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-CodeDeployRole-${AWS::Region}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codedeploy.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole
+
+  # CodeDeploy Deployment Group targeting EC2 instances by tag
+  DeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      ApplicationName: !Ref CodeDeployApplication
+      DeploymentGroupName: !Sub '${ProjectName}-DG'
+      ServiceRoleArn: !GetAtt CodeDeployServiceRole.Arn
+      DeploymentConfigName: CodeDeployDefault.OneAtATime
+      Ec2TagFilters:
+        - Key: !Ref EC2TagKey
+          Value: !Ref EC2TagValue
+          Type: KEY_AND_VALUE
+      AutoRollbackConfiguration:
+        Enabled: true
+        Events:
+          - DEPLOYMENT_FAILURE
+          - DEPLOYMENT_STOP_ON_ALARM
+          - DEPLOYMENT_STOP_ON_REQUEST
+
+  # CodeBuild Service Role
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-CodeBuildRole-${AWS::Region}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildInline
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: Logs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Sid: S3Artifacts
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketLocation
+                Resource:
+                  - !Sub '${ArtifactsBucket.Arn}'
+                  - !Sub '${ArtifactsBucket.Arn}/*'
+              - Sid: CodeCommit
+                Effect: Allow
+                Action:
+                  - codecommit:GitPull
+                  - codecommit:GetRepository
+                  - codecommit:GetBranch
+                Resource: !GetAtt Repo.Arn
+
+  # CodeBuild Project
+  BuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-Build'
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        Image: !Ref BuildImage
+        ComputeType: !Ref BuildComputeType
+        PrivilegedMode: false
+      Source:
+        Type: CODEPIPELINE
+      TimeoutInMinutes: 30
+      Cache:
+        Type: NO_CACHE
+
+  # CodePipeline Service Role
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-CodePipelineRole-${AWS::Region}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodePipelineInline
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: S3Access
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                Resource:
+                  - !Sub '${ArtifactsBucket.Arn}'
+                  - !Sub '${ArtifactsBucket.Arn}/*'
+              - Sid: CodeCommitAccess
+                Effect: Allow
+                Action:
+                  - codecommit:GetBranch
+                  - codecommit:GetRepository
+                  - codecommit:ListBranches
+                  - codecommit:BatchGet* 
+                  - codecommit:Get*
+                Resource: !GetAtt Repo.Arn
+              - Sid: CodeBuildAccess
+                Effect: Allow
+                Action:
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StartBuild
+                Resource: !GetAtt BuildProject.Arn
+              - Sid: CodeDeployAccess
+                Effect: Allow
+                Action:
+                  - codedeploy:CreateDeployment
+                  - codedeploy:GetDeployment
+                  - codedeploy:GetDeploymentConfig
+                  - codedeploy:RegisterApplicationRevision
+                Resource: '*'
+              - Sid: PassRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !GetAtt CodeBuildRole.Arn
+                  - !GetAtt CodeDeployServiceRole.Arn
+
+  # CodePipeline definition
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub '${ProjectName}-Pipeline'
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactsBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: CodeCommit_Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: '1'
+              OutputArtifacts:
+                - Name: SourceOutput
+              Configuration:
+                RepositoryName: !Ref RepositoryName
+                BranchName: !Ref RepositoryBranch
+                PollForSourceChanges: false
+        - Name: Build
+          Actions:
+            - Name: CodeBuild_Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: BuildOutput
+              Configuration:
+                ProjectName: !Ref BuildProject
+        - Name: Deploy
+          Actions:
+            - Name: CodeDeploy_Deploy
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CodeDeploy
+                Version: '1'
+              InputArtifacts:
+                - Name: BuildOutput
+              Configuration:
+                ApplicationName: !Ref CodeDeployApplication
+                DeploymentGroupName: !Ref DeploymentGroup
+
+  # Event rule to trigger pipeline on repo changes
+  CodeCommitToPipelineRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-OnCommit'
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - CodeCommit Repository State Change
+        resources:
+          - !GetAtt Repo.Arn
+        detail:
+          referenceType:
+            - branch
+          referenceName:
+            - !Ref RepositoryBranch
+      Targets:
+        - Arn: !Sub 'arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}'
+          Id: CodePipelineTarget
+          RoleArn: !GetAtt EventsInvokePipelineRole.Arn
+
+  EventsInvokePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-EventsInvokePipeline-${AWS::Region}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokePipeline
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: codepipeline:StartPipelineExecution
+                Resource: !Sub 'arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}'
+
+Outputs:
+  PipelineName:
+    Value: !Ref Pipeline
+  PipelineConsoleUrl:
+    Value: !Sub 'https://console.aws.amazon.com/codesuite/codepipeline/pipelines/${Pipeline}/view?region=${AWS::Region}'
+  RepositoryCloneUrlHttp:
+    Value: !GetAtt Repo.CloneUrlHttp
+  ArtifactsBucketName:
+    Value: !Ref ArtifactsBucket

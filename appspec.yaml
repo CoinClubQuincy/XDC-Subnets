@@ -1,0 +1,22 @@
+version: 0.0
+os: linux
+files:
+  - source: /package
+    destination: /var/www/sample
+hooks:
+  ApplicationStop:
+    - location: scripts/stop.sh
+      timeout: 180
+      runas: root
+  BeforeInstall:
+    - location: scripts/before_install.sh
+      timeout: 180
+      runas: root
+  AfterInstall:
+    - location: scripts/after_install.sh
+      timeout: 180
+      runas: root
+  ApplicationStart:
+    - location: scripts/start.sh
+      timeout: 180
+      runas: root
