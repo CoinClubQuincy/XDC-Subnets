@@ -55,10 +55,10 @@ abstract contract NRC20 is ERC20, Ownable {
 }
 
 /**
- * @title Primary Insight Derivative Token (MIDT)
+ * @title Data Derivative Credit
  * @dev ERC20 with optional fee, URI metadata, and correct initial mint math.
  */
-abstract contract PIDT is NRC20 {
+abstract contract DDT is NRC20 {
     string public uri;
 
     constructor(
@@ -73,10 +73,10 @@ abstract contract PIDT is NRC20 {
 }
 
 /**
- * @title Insight Execution Token (IET)
+ * @title Insight Derivative Credit 
  * @dev ERC20 with optional fee, URI metadata, and correct initial mint math.
  */
-abstract contract IET is NRC20 {
+abstract contract IDC is NRC20 {
     string public uri;
 
     constructor(

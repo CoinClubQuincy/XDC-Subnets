@@ -1,3 +1,0 @@
-# minimal, valid Yarn 4 config
-nodeLinker: node-modules
-gitProtocol: https
