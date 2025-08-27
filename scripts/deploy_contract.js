@@ -1,5 +1,3 @@
-
-
 // deploy_contract.js
 // ESM script (package.json has "type": "module")
 // Deploys:
@@ -14,7 +12,7 @@
 //   TOKEN_CONTRACT_NAME=DDT PAYMENTS_CONTRACT_NAME=SimplePayments \
 //   npx hardhat run scripts/deploy_contract.js --network localhost
 //
-import { ethers, network } from "hardhat";
+import { ethers, network, artifacts } from "hardhat";
 import fs from "fs";
 import path from "path";
 import process from "process";
@@ -32,6 +30,11 @@ const TOKEN_SYMBOL = process.env.TOKEN_SYMBOL || "DDT";
 const TOKEN_SUPPLY = BigInt(process.env.TOKEN_SUPPLY || "1000000"); // whole tokens; contract will scale by decimals()
 const TOKEN_URI    = process.env.TOKEN_URI    || "https://example.com/token/DDT";
 
+// Optional confirmations and gas price
+const CONFS = Number(process.env.CONFS || "2"); // wait for N confirmations on live nets
+const GAS_PRICE_GWEI = process.env.GAS_PRICE_GWEI; // e.g., "3"
+const GAS_OVERRIDES = GAS_PRICE_GWEI ? { gasPrice: ethers.parseUnits(GAS_PRICE_GWEI, "gwei") } : undefined;
+
 async function main() {
   const [deployer] = await ethers.getSigners();
   console.log("Network   :", network.name);
@@ -45,41 +48,69 @@ async function main() {
     TOKEN_URI
   });
 
+  const net = await ethers.provider.getNetwork();
+  console.log("Chain ID  :", Number(net.chainId));
+
   // --- Deploy Token ---
   console.log(`\nDeploying ${TOKEN_CONTRACT_NAME}...`);
   const TokenFactory = await ethers.getContractFactory(TOKEN_CONTRACT_NAME);
-  // Expected constructor for DDT: (string name, string symbol, uint256 supply, string uri)
-  const token = await TokenFactory.deploy(TOKEN_NAME, TOKEN_SYMBOL, TOKEN_SUPPLY, TOKEN_URI);
+  const tokenArgs = [TOKEN_NAME, TOKEN_SYMBOL, TOKEN_SUPPLY, TOKEN_URI];
+  const token = GAS_OVERRIDES
+    ? await TokenFactory.deploy(...tokenArgs, GAS_OVERRIDES)
+    : await TokenFactory.deploy(...tokenArgs);
   await token.waitForDeployment();
+  const tokenTx = token.deploymentTransaction?.();
+  if (tokenTx && CONFS > 0) {
+    await tokenTx.wait(CONFS);
+  }
   const tokenAddress = await token.getAddress();
   console.log(`${TOKEN_CONTRACT_NAME} deployed at:`, tokenAddress);
+
+  // Save Token ABI for frontend
+  const tokenArtifact = await artifacts.readArtifact(TOKEN_CONTRACT_NAME);
+  const outDir = path.join(__dirname, "..", "deployments");
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.writeFileSync(path.join(outDir, `${TOKEN_CONTRACT_NAME}.abi.json`), JSON.stringify(tokenArtifact.abi, null, 2));
 
   // --- Deploy Payments Receiver ---
   console.log(`\nDeploying ${PAYMENTS_CONTRACT_NAME}...`);
   const PaymentsFactory = await ethers.getContractFactory(PAYMENTS_CONTRACT_NAME);
-  // Expected constructor for SimplePayments: (address tokenAddress)
-  const payments = await PaymentsFactory.deploy(tokenAddress);
+  const payments = GAS_OVERRIDES
+    ? await PaymentsFactory.deploy(tokenAddress, GAS_OVERRIDES)
+    : await PaymentsFactory.deploy(tokenAddress);
   await payments.waitForDeployment();
+  const paymentsTx = payments.deploymentTransaction?.();
+  if (paymentsTx && CONFS > 0) {
+    await paymentsTx.wait(CONFS);
+  }
   const paymentsAddress = await payments.getAddress();
   console.log(`${PAYMENTS_CONTRACT_NAME} deployed at:`, paymentsAddress);
 
-  // --- Optional: set initial fee on token if it supports setFee(feeBps, collector) ---
-  if (typeof token.setFee === "function") {
+  // Save Payments ABI for frontend
+  const paymentsArtifact = await artifacts.readArtifact(PAYMENTS_CONTRACT_NAME);
+  fs.writeFileSync(path.join(outDir, `${PAYMENTS_CONTRACT_NAME}.abi.json`), JSON.stringify(paymentsArtifact.abi, null, 2));
+
+  // --- Optional: set initial fee on token if it supports setFee(uint16,address) ---
+  try {
+    token.getFunction("setFee");
     const collector = deployer.address;
-    const feeBps = Number(process.env.TOKEN_FEE_BPS || "0"); // 0 by default
+    const feeBps = Number(process.env.TOKEN_FEE_BPS || "0");
     if (feeBps > 0) {
       console.log(`\nConfiguring token fee: ${feeBps} bps → collector ${collector}`);
       const tx = await token.setFee(feeBps, collector);
       await tx.wait();
       console.log("Token fee configured.");
     }
+  } catch (_) {
+    // token has no setFee function — skip silently
   }
 
   // --- Write deployments file ---
-  const outDir = path.join(__dirname, "..", "deployments");
   const outFile = path.join(outDir, `${network.name}.json`);
   const payload = {
     network: network.name,
+    chainId: Number(net.chainId),
+    confirmations: CONFS,
     deployer: deployer.address,
     token: {
       name: TOKEN_NAME,
@@ -95,7 +126,6 @@ async function main() {
     },
     timestamp: new Date().toISOString()
   };
-  fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(outFile, JSON.stringify(payload, null, 2));
   console.log(`\nSaved deployments → ${outFile}`);
 
@@ -104,6 +134,8 @@ async function main() {
   console.log(`PAYMENT_CONTRACT: "${paymentsAddress}",`);
   console.log(`TOKEN_CONTRACT:   "${tokenAddress}",`);
   console.log(`TOKEN_DECIMALS:   18 // (OpenZeppelin ERC20 default; adjust if different)`);
+  console.log(`CONFIRMATIONS:    ${CONFS}`);
+  if (GAS_OVERRIDES) console.log(`GAS_PRICE_GWEI:   ${GAS_PRICE_GWEI}`);
   console.log("================================");
 }
 
