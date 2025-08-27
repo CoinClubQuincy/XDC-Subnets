@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Simple ERC-20 Invoice → MetaMask</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:,">
+  <style>
+    :root {
+      --bg: #0f1115;
+      --card: #161a22;
+      --text: #e8eefc;
+      --muted: #9fb0d6;
+      --accent: #7aa2ff;
+      --danger: #ff6b6b;
+      --success: #37d99e;
+      --border: #262b36;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(1200px 600px at 70% -20%, #1b2030 0%, var(--bg) 55%);
+      color: var(--text);
+      font: 15px/1.4 Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      display: grid;
+      place-items: center;
+      min-height: 100dvh;
+      padding: 24px;
+    }
+    .wrap {
+      width: 100%;
+      max-width: 680px;
+    }
+    .card {
+      background: linear-gradient(180deg, #1a1f2a 0%, var(--card) 100%);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    }
+    h1, h2 { margin: 0 0 10px; }
+    h1 { font-size: 22px; }
+    h2 { font-size: 18px; color: var(--muted); }
+    label { display:block; margin: 12px 0 6px; color: var(--muted); font-size: 13px;}
+    input, select {
+      width: 100%;
+      background: #0e1118;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 11px 12px;
+      outline: none;
+    }
+    input[readonly] { opacity: 0.8; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .btns { display:flex; gap:12px; margin-top: 18px; }
+    button {
+      appearance:none;
+      border:1px solid var(--border);
+      background: linear-gradient(180deg, #27304a 0%, #20273a 100%);
+      color: var(--text);
+      padding: 10px 14px;
+      border-radius: 12px;
+      cursor:pointer;
+      font-weight: 600;
+    }
+    button.primary {
+      border-color: #2a3a7a;
+      background: linear-gradient(180deg, #324cb3 0%, #2a43a1 100%);
+    }
+    button:disabled { opacity: .6; cursor:not-allowed; }
+    .meta { margin-top: 12px; color: var(--muted); font-size: 13px; }
+    .notice { margin-top: 10px; padding:10px 12px; border-radius: 10px; border:1px solid var(--border); }
+    .notice.ok { border-color:#204d3b; background: #0d1d18; color:#8feac0; }
+    .notice.bad { border-color:#5a1f26; background:#1a0e10; color:#ff9aa6; }
+    .kbd { background:#101420; border:1px solid #293047; padding: 1px 6px; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .divider { height:1px; background: var(--border); margin:16px 0; }
+    .muted { color: var(--muted); }
+    .txlink a { color: var(--accent); text-decoration: none; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- Invoice Page -->
+    <section id="page-invoice" class="card">
+      <h1>Invoice</h1>
+      <h2>Pay with ERC-20 via MetaMask</h2>
+
+      <div class="row">
+        <div>
+          <label>Amount</label>
+          <input id="amount" type="text" inputmode="decimal" placeholder="e.g. 12.50" />
+        </div>
+        <div>
+          <label>Currency (symbol)</label>
+          <input id="symbol" type="text" value="SFTR" />
+        </div>
+      </div>
+
+      <label>Invoice ID (optional)</label>
+      <input id="invoiceId" type="text" placeholder="e.g. INV-2025-0001" />
+
+      <div class="divider"></div>
+
+      <div class="row">
+        <div>
+          <label>Payer Wallet</label>
+          <input id="account" type="text" readonly placeholder="Not connected" />
+        </div>
+        <div>
+          <label>Network</label>
+          <input id="network" type="text" readonly placeholder="Unknown" />
+        </div>
+      </div>
+
+      <div class="btns">
+        <button id="btn-connect">Connect MetaMask</button>
+        <button id="btn-pay" class="primary" disabled>Pay Invoice</button>
+      </div>
+
+      <div id="status" class="meta"></div>
+      <div id="alert" class="notice hidden"></div>
+    </section>
+
+    <!-- Result Page -->
+    <section id="page-result" class="card hidden">
+      <h1 id="result-title">Payment Result</h1>
+      <div id="result-body" class="meta"></div>
+      <div class="txlink meta" id="txlink"></div>
+      <div class="btns">
+        <button id="btn-back">Back to Invoice</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- Ethers.js (v5) -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js" integrity="sha256-pmKTpqK7Te4GGmhhK+C+PFwKt+QGirjZiko1e69mTHM=" crossorigin="anonymous"></script>
+  <script>
+    // ============
+    // CONFIG—EDIT THESE
+    // ============
+    const CONFIG = {
+      // Chain you expect (helps prevent mis-sends). Set null to skip enforcing.
+      EXPECTED_CHAIN_ID_HEX: "0x539", // 0x539 = 1337 (Ganache). Set to null to disable.
+
+      // Address of your payment contract that ultimately receives the ERC-20.
+      PAYMENT_CONTRACT: "0xYourPaymentContractAddress",
+
+      // The ERC-20 token contract the invoice is denominated in.
+      TOKEN_CONTRACT: "0xYourErc20TokenAddress",
+
+      // Human symbol & decimals (used for display + parsing). Decimals MUST match your token.
+      TOKEN_SYMBOL: "SFTR",
+      TOKEN_DECIMALS: 6,
+
+      // Do we need an explicit approval step? (true for transferFrom-based contracts)
+      REQUIRE_APPROVAL: true,
+
+      // --- Payment contract ABI & method ---
+      // Replace with your actual ABI + method. Below is a minimal example for:
+      // function pay(bytes32 invoiceId, uint256 amount) external;
+      PAYMENT_ABI: [
+        "function pay(bytes32 invoiceId, uint256 amount) external",
+        "event PaymentReceived(address indexed from, bytes32 indexed invoiceId, uint256 amount)"
+      ],
+
+      // If your method signature differs, adapt this builder.
+      // It must return: { method: string, args: any[] }
+      PAY_FUNCTION_ARGS: (invoiceIdBytes32, amountWei) => ({
+        method: "pay",
+        args: [invoiceIdBytes32, amountWei]
+      }),
+
+      // Minimal ERC-20 ABI
+      ERC20_ABI: [
+        "function decimals() view returns (uint8)",
+        "function symbol() view returns (string)",
+        "function balanceOf(address) view returns (uint256)",
+        "function allowance(address owner, address spender) view returns (uint256)",
+        "function approve(address spender, uint256 amount) returns (bool)"
+      ],
+
+      // Optional block explorer base (for tx links). Example: "https://polygonscan.com/tx/"
+      EXPLORER_TX_BASE: "" // leave blank if unknown
+    };
+
+    // ============
+    // Helpers
+    // ============
+    const $ = (id) => document.getElementById(id);
+    const show = (el) => el.classList.remove("hidden");
+    const hide = (el) => el.classList.add("hidden");
+
+    function toBytes32(str) {
+      // simple hash→bytes32 if string is longer; otherwise pad
+      const hex = ethers.utils.id(str || ""); // keccak256("...") -> bytes32
+      return hex;
+    }
+
+    function toUnits(amountStr, decimals) {
+      // tolerate commas & spaces
+      const clean = (amountStr || "").replace(/,/g, "").trim();
+      return ethers.utils.parseUnits(clean || "0", decimals);
+    }
+
+    function fmtUnits(bn, decimals = CONFIG.TOKEN_DECIMALS) {
+      try { return ethers.utils.formatUnits(bn || 0, decimals); }
+      catch { return "0"; }
+    }
+
+    function setStatus(msg) { $("status").textContent = msg || ""; }
+    function setAlert(msg, ok = true) {
+      const el = $("alert");
+      el.textContent = msg || "";
+      el.className = "notice " + (ok ? "ok" : "bad");
+      if (msg) show(el); else hide(el);
+    }
+
+    function switchPage(toResult, { title = "", body = "", txHash = "" } = {}) {
+      if (toResult) {
+        $("result-title").textContent = title || "Payment Result";
+        $("result-body").innerHTML = body || "";
+        const linkEl = $("txlink");
+        if (txHash && CONFIG.EXPLORER_TX_BASE) {
+          linkEl.innerHTML = `Tx: <a href="${CONFIG.EXPLORER_TX_BASE}${txHash}" target="_blank" rel="noreferrer">${txHash}</a>`;
+          show(linkEl);
+        } else {
+          linkEl.innerHTML = "";
+          hide(linkEl);
+        }
+        hide($("page-invoice"));
+        show($("page-result"));
+      } else {
+        show($("page-invoice"));
+        hide($("page-result"));
+      }
+    }
+
+    // ============
+    // App state
+    // ============
+    let provider, signer, accounts, chainId;
+    let erc20, payContract;
+
+    async function ensureProvider() {
+      if (!window.ethereum) {
+        throw new Error("MetaMask not found. Please install the extension.");
+      }
+      provider = new ethers.providers.Web3Provider(window.ethereum, "any");
+      return provider;
+    }
+
+    async function connect() {
+      await ensureProvider();
+      accounts = await provider.send("eth_requestAccounts", []);
+      signer = provider.getSigner();
+      chainId = await provider.send("eth_chainId", []);
+      $("account").value = accounts[0] || "";
+      $("network").value = chainId;
+      if (CONFIG.EXPECTED_CHAIN_ID_HEX && chainId !== CONFIG.EXPECTED_CHAIN_ID_HEX) {
+        setAlert(`Wrong network (chainId ${chainId}). Please switch to ${CONFIG.EXPECTED_CHAIN_ID_HEX}.`, false);
+      } else {
+        setAlert("");
+      }
+
+      erc20 = new ethers.Contract(CONFIG.TOKEN_CONTRACT, CONFIG.ERC20_ABI, signer);
+      payContract = new ethers.Contract(CONFIG.PAYMENT_CONTRACT, CONFIG.PAYMENT_ABI, signer);
+
+      // Optional sanity: try to fetch decimals/symbol
+      try {
+        const dec = await erc20.decimals();
+        await erc20.symbol().catch(() => null); // probe, ignore value
+        $("symbol").value = CONFIG.TOKEN_SYMBOL; // stick with requested display symbol
+        if (dec != CONFIG.TOKEN_DECIMALS) {
+          setAlert(`Warning: token decimals on-chain (${dec}) differ from CONFIG (${CONFIG.TOKEN_DECIMALS}).`, false);
+        }
+      } catch (e) {
+        // Non-fatal if token is proxied or ABI trimmed
+      }
+
+      $("btn-pay").disabled = false;
+      setStatus("Wallet connected.");
+    }
+
+    async function pay() {
+      setAlert(""); setStatus("");
+      $("btn-pay").disabled = true;
+
+      try {
+        if (!signer) await connect();
+
+        const amountStr = $("amount").value;
+        const invoiceIdStr = $("invoiceId").value.trim();
+        const amt = toUnits(amountStr, CONFIG.TOKEN_DECIMALS);
+        if (amt.lte(0)) throw new Error("Amount must be greater than 0.");
+
+        const from = await signer.getAddress();
+
+        if (CONFIG.REQUIRE_APPROVAL) {
+          setStatus("Checking allowance...");
+          const currentAllowance = await erc20.allowance(from, CONFIG.PAYMENT_CONTRACT);
+          if (currentAllowance.lt(amt)) {
+            setStatus("Sending approval...");
+            const txA = await erc20.approve(CONFIG.PAYMENT_CONTRACT, amt);
+            setAlert(`Approval tx submitted: ${txA.hash}`);
+            await txA.wait();
+            setStatus("Approval confirmed.");
+          } else {
+            setStatus("Allowance sufficient; skipping approval.");
+          }
+        }
+
+        const invoiceBytes32 = toBytes32(invoiceIdStr);
+        const { method, args } = CONFIG.PAY_FUNCTION_ARGS(invoiceBytes32, amt);
+
+        setStatus("Sending payment...");
+        const tx = await payContract[method](...args);
+        setAlert(`Payment tx submitted: ${tx.hash}`);
+        const rec = await tx.wait();
+
+        // Done → Result page
+        switchPage(true, {
+          title: "✅ Payment Confirmed",
+          body: `Paid <span class="kbd">${$("symbol").value}</span> <b>${amountStr}</b> (decimals ${CONFIG.TOKEN_DECIMALS}).<br>
+                 From <span class="kbd">${from}</span> to <span class="kbd">${CONFIG.PAYMENT_CONTRACT}</span>.`,
+          txHash: tx.hash
+        });
+      } catch (err) {
+        console.error(err);
+        const msg = err?.data?.message || err?.reason || err?.message || String(err);
+        if (msg.toLowerCase().includes("user rejected")) {
+          switchPage(true, { title: "🚫 Payment Rejected", body: "You cancelled the transaction in MetaMask." });
+        } else {
+          setAlert(`Error: ${msg}`, false);
+          $("btn-pay").disabled = false;
+        }
+      }
+    }
+
+    // ============
+    // Wire up UI
+    // ============
+    $("btn-connect").addEventListener("click", connect);
+    $("btn-pay").addEventListener("click", pay);
+    $("btn-back").addEventListener("click", () => switchPage(false));
+
+    // Autofill from URL params (?amount=12.5&symbol=USDC&invoice=INV-1)
+    (function initFromQuery() {
+      const q = new URLSearchParams(location.search);
+      if (q.has("amount")) $("amount").value = q.get("amount");
+      if (q.has("symbol")) $("symbol").value = q.get("symbol");
+      if (q.has("invoice")) $("invoiceId").value = q.get("invoice");
+    })();
+
+    // MetaMask chain/account changes
+    if (window.ethereum) {
+      window.ethereum.on?.("accountsChanged", () => location.reload());
+      window.ethereum.on?.("chainChanged", () => location.reload());
+    }
+  </script>
+</body>
+</html>
