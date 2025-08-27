@@ -1,36 +1,28 @@
 {
-  "dependencies": {
-    "@openzeppelin/contracts": "^5.4.0",
-    "deploy-v3": "^1.0.6"
-  },
-  "type": "module",
-  "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
-    "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.0",
-    "@nomicfoundation/hardhat-verify": "^2.1.1",
-    "@types/chai": "^4.3.20",
-    "@types/chai-as-promised": "^8.0.2",
-    "@types/mocha": "^10.0.10",
-    "@types/node": "^22.18.0",
-    "dotenv": "^17.2.1",
-    "ethers": "^6.15.0",
-    "forge-std": "github:foundry-rs/forge-std#v1.9.4",
-    "hardhat": "^2.26.3",
-    "ts-node": "^10.9.2",
-    "typescript": "~5.8.0"
-  },
-  "packageManager": "yarn@4.3.1",
-  "name": "xdc-subnets",
-  "description": "This project showcases a Hardhat 3 Beta project using `mocha` for tests and the `ethers` library for Ethereum interactions.",
+  "name": "nuclei-network",
   "version": "1.0.0",
-  "main": "index.js",
-  "directories": {
-    "test": "test"
-  },
+  "type": "module",
+  "private": true,
   "scripts": {
-    "test": "mocha"
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "node": "hardhat node",
+    "clean": "hardhat clean"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+  "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
+    "@nomicfoundation/hardhat-ethers": "^3.1.0",
+    "@nomicfoundation/hardhat-ethers-chai-matchers": "^3.0.0",
+    "@openzeppelin/contracts": "^5.0.0",
+    "@types/chai": "^5.2.2",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.19.11",
+    "chai": "^4.5.0",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.15.0",
+    "hardhat": "^3.0.1",
+    "or": "^0.2.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  }
 }
