@@ -1,106 +1,113 @@
-const { ethers, artifacts } = require("hardhat");
-const { keccak256 } = ethers.utils;
+
+
+// deploy_contract.js
+// ESM script (package.json has "type": "module")
+// Deploys:
+// 1) DDT-like ERC20 (constructor: (name, symbol, supply, uri))
+// 2) SimplePayments(tokenAddress)
+//
+// Usage:
+//   npx hardhat run scripts/deploy_contract.js --network localhost
+//
+// Env overrides (optional):
+//   TOKEN_NAME="Data Derivative Token" TOKEN_SYMBOL=DDT TOKEN_SUPPLY=1000000 TOKEN_URI="ipfs://..." \
+//   TOKEN_CONTRACT_NAME=DDT PAYMENTS_CONTRACT_NAME=SimplePayments \
+//   npx hardhat run scripts/deploy_contract.js --network localhost
+//
+import { ethers, network } from "hardhat";
+import fs from "fs";
+import path from "path";
+import process from "process";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// ---- Config (env or defaults) ----
+const TOKEN_CONTRACT_NAME = process.env.TOKEN_CONTRACT_NAME || "DDT";               // must exist in /contracts and be concrete (not abstract)
+const PAYMENTS_CONTRACT_NAME = process.env.PAYMENTS_CONTRACT_NAME || "SimplePayments";
+
+const TOKEN_NAME   = process.env.TOKEN_NAME   || "Data Derivative Token";
+const TOKEN_SYMBOL = process.env.TOKEN_SYMBOL || "DDT";
+const TOKEN_SUPPLY = BigInt(process.env.TOKEN_SUPPLY || "1000000"); // whole tokens; contract will scale by decimals()
+const TOKEN_URI    = process.env.TOKEN_URI    || "https://example.com/token/DDT";
 
 async function main() {
   const [deployer] = await ethers.getSigners();
-  console.log("Deployer:", deployer.address);
+  console.log("Network   :", network.name);
+  console.log("Deployer  :", deployer.address);
+  console.log("Config    :", {
+    TOKEN_CONTRACT_NAME,
+    PAYMENTS_CONTRACT_NAME,
+    TOKEN_NAME,
+    TOKEN_SYMBOL,
+    TOKEN_SUPPLY: TOKEN_SUPPLY.toString(),
+    TOKEN_URI
+  });
 
-  // 1) Deploy UniswapV2Factory (from @uniswap/v2-core, compiled by HH)
-  const UniFactory = await ethers.getContractFactory("UniswapV2Factory"); // v0.5.16
-  const factory = await UniFactory.deploy(deployer.address); // feeToSetter
-  await factory.deployed();
-  console.log("Factory:", factory.address);
+  // --- Deploy Token ---
+  console.log(`\nDeploying ${TOKEN_CONTRACT_NAME}...`);
+  const TokenFactory = await ethers.getContractFactory(TOKEN_CONTRACT_NAME);
+  // Expected constructor for DDT: (string name, string symbol, uint256 supply, string uri)
+  const token = await TokenFactory.deploy(TOKEN_NAME, TOKEN_SYMBOL, TOKEN_SUPPLY, TOKEN_URI);
+  await token.waitForDeployment();
+  const tokenAddress = await token.getAddress();
+  console.log(`${TOKEN_CONTRACT_NAME} deployed at:`, tokenAddress);
 
-  // 2) Compute INIT_CODE_PAIR_HASH from Pair creation code (for your logs/UI)
-  const pairArtifact = await artifacts.readArtifact("UniswapV2Pair");
-  const initCodePairHash = keccak256(pairArtifact.bytecode);
-  console.log("INIT_CODE_PAIR_HASH:", initCodePairHash);
+  // --- Deploy Payments Receiver ---
+  console.log(`\nDeploying ${PAYMENTS_CONTRACT_NAME}...`);
+  const PaymentsFactory = await ethers.getContractFactory(PAYMENTS_CONTRACT_NAME);
+  // Expected constructor for SimplePayments: (address tokenAddress)
+  const payments = await PaymentsFactory.deploy(tokenAddress);
+  await payments.waitForDeployment();
+  const paymentsAddress = await payments.getAddress();
+  console.log(`${PAYMENTS_CONTRACT_NAME} deployed at:`, paymentsAddress);
 
-  // 3) Deploy WETH9 (local canonical wrapped native)
-  const WETH9 = await ethers.getContractFactory("WETH9");
-  const weth = await WETH9.deploy();
-  await weth.deployed();
-  console.log("WETH9:", weth.address);
+  // --- Optional: set initial fee on token if it supports setFee(feeBps, collector) ---
+  if (typeof token.setFee === "function") {
+    const collector = deployer.address;
+    const feeBps = Number(process.env.TOKEN_FEE_BPS || "0"); // 0 by default
+    if (feeBps > 0) {
+      console.log(`\nConfiguring token fee: ${feeBps} bps → collector ${collector}`);
+      const tx = await token.setFee(feeBps, collector);
+      await tx.wait();
+      console.log("Token fee configured.");
+    }
+  }
 
-  // 4) Deploy Router02 (from @uniswap/v2-periphery)
-  const Router = await ethers.getContractFactory("UniswapV2Router02"); // v0.6.6
-  const router = await Router.deploy(factory.address, weth.address);
-  await router.deployed();
-  console.log("Router02:", router.address);
+  // --- Write deployments file ---
+  const outDir = path.join(__dirname, "..", "deployments");
+  const outFile = path.join(outDir, `${network.name}.json`);
+  const payload = {
+    network: network.name,
+    deployer: deployer.address,
+    token: {
+      name: TOKEN_NAME,
+      symbol: TOKEN_SYMBOL,
+      supply: TOKEN_SUPPLY.toString(),
+      uri: TOKEN_URI,
+      contract: TOKEN_CONTRACT_NAME,
+      address: tokenAddress
+    },
+    payments: {
+      contract: PAYMENTS_CONTRACT_NAME,
+      address: paymentsAddress
+    },
+    timestamp: new Date().toISOString()
+  };
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.writeFileSync(outFile, JSON.stringify(payload, null, 2));
+  console.log(`\nSaved deployments → ${outFile}`);
 
-  // 5) Deploy two mock tokens: TOKENA, TOKENB
-  const supply = ethers.utils.parseEther("1000000");
-  const MockERC20 = await ethers.getContractFactory("MockERC20");
-  const tokenA = await MockERC20.deploy("Token A", "TKA", supply);
-  await tokenA.deployed();
-  console.log("TokenA:", tokenA.address);
-
-  const tokenB = await MockERC20.deploy("Token B", "TKB", supply);
-  await tokenB.deployed();
-  console.log("TokenB:", tokenB.address);
-
-  // 6) Create the pair (Factory.createPair) and fetch its address
-  const txCreate = await factory.createPair(tokenA.address, tokenB.address);
-  const rcCreate = await txCreate.wait();
-  const pairAddr = await factory.getPair(tokenA.address, tokenB.address);
-  console.log("Pair(TKA/TKB):", pairAddr);
-
-  // 7) Approvals for Router
-  const approveAmount = ethers.utils.parseEther("1000000000");
-  await (await tokenA.approve(router.address, approveAmount)).wait();
-  await (await tokenB.approve(router.address, approveAmount)).wait();
-
-  // 8) Add liquidity: 10_000 TKA + 20_000 TKB
-  const amountADesired = ethers.utils.parseEther("10000");
-  const amountBDesired = ethers.utils.parseEther("20000");
-  const amountAMin = 0;
-  const amountBMin = 0;
-  const to = deployer.address;
-  const deadline = Math.floor(Date.now() / 1000) + 60 * 20;
-
-  const txAdd = await router.addLiquidity(
-    tokenA.address,
-    tokenB.address,
-    amountADesired,
-    amountBDesired,
-    amountAMin,
-    amountBMin,
-    to,
-    deadline
-  );
-  await txAdd.wait();
-  console.log("Liquidity added for TKA/TKB.");
-
-  // 9) Do a tiny test swap via Router: swap 100 TKA -> TKB
-  const amountIn = ethers.utils.parseEther("100");
-  const amountOutMin = 0;
-  const path = [tokenA.address, tokenB.address];
-
-  await (await tokenA.approve(router.address, amountIn)).wait();
-  const balBBefore = await tokenB.balanceOf(deployer.address);
-
-  const txSwap = await router.swapExactTokensForTokens(
-    amountIn,
-    amountOutMin,
-    path,
-    deployer.address,
-    Math.floor(Date.now() / 1000) + 60 * 20
-  );
-  await txSwap.wait();
-
-  const balBAfter = await tokenB.balanceOf(deployer.address);
-  console.log(
-    "Swap OK. Received TKB:",
-    ethers.utils.formatEther(balBAfter.sub(balBBefore))
-  );
-
-  // 10) Log fee switch info (off by default)
-  console.log("feeToSetter:", await factory.feeToSetter());
-  console.log("feeTo:", await factory.feeTo());
-  console.log("Done.");
+  // --- Console-friendly summary for quick copy to frontend CONFIG ---
+  console.log("\n=== Copy to Frontend CONFIG ===");
+  console.log(`PAYMENT_CONTRACT: "${paymentsAddress}",`);
+  console.log(`TOKEN_CONTRACT:   "${tokenAddress}",`);
+  console.log(`TOKEN_DECIMALS:   18 // (OpenZeppelin ERC20 default; adjust if different)`);
+  console.log("================================");
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
+main().catch((err) => {
+  console.error(err);
+  process.exitCode = 1;
 });

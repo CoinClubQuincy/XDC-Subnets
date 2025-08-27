@@ -18,7 +18,10 @@ abstract contract NRC20 is ERC20, Ownable {
 
     event FeeParamsUpdated(uint16 feeBps, address feeCollector);
 
-    constructor(string memory name_, string memory symbol_) ERC20(name_, symbol_) {}
+    constructor(string memory name_, string memory symbol_, address initialOwner)
+        ERC20(name_, symbol_)
+        Ownable(initialOwner)
+    {}
 
     /**
      * @dev OpenZeppelin ERC20 (v5) transfer hook.
@@ -58,7 +61,7 @@ abstract contract NRC20 is ERC20, Ownable {
  * @title Data Derivative Credit
  * @dev ERC20 with optional fee, URI metadata, and correct initial mint math.
  */
-abstract contract DDT is NRC20 {
+contract DDT is NRC20 {
     string public uri;
 
     constructor(
@@ -66,7 +69,7 @@ abstract contract DDT is NRC20 {
         string memory _symbol,
         uint256 _supply,
         string memory _uri
-    ) NRC20(_name, _symbol) {
+    ) NRC20(_name, _symbol, msg.sender) {
         uri = _uri;
         _mint(msg.sender, _supply * (10 ** uint256(decimals())));
     }
@@ -76,7 +79,7 @@ abstract contract DDT is NRC20 {
  * @title Insight Derivative Credit 
  * @dev ERC20 with optional fee, URI metadata, and correct initial mint math.
  */
-abstract contract IDC is NRC20 {
+contract IDC is NRC20 {
     string public uri;
 
     constructor(
@@ -84,7 +87,7 @@ abstract contract IDC is NRC20 {
         string memory _symbol,
         uint256 _supply,
         string memory _uri
-    ) NRC20(_name, _symbol) {
+    ) NRC20(_name, _symbol, msg.sender) {
         uri = _uri;
         _mint(msg.sender, _supply * (10 ** uint256(decimals())));
     }
