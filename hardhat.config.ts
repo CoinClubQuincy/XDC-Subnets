@@ -15,6 +15,7 @@ const config = {
   },
   networks: {
     ganache: {
+      type: "http",
       url: process.env.GANACHE_URL || "http://127.0.0.1:8545",
       accounts: (() => {
         const raw = process.env.PRIVATE_KEYS ?? "";
