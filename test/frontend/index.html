@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Simple Sifter Invoice → MetaMask</title>
+  <title>Siftr Invoice → MetaMask</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
   <style>
@@ -122,15 +122,77 @@
     .logo { width: 24px; height: 24px; border-radius: 6px; border:1px solid var(--border); background:#0e1118; object-fit: cover; }
     .logo.lg { width: 32px; height: 32px; }
     .fiatline { margin-top: 6px; font-size: 12px; color: var(--muted); }
+
+    /* Top status bar */
+    .topbar {
+      position: fixed; top: 0; left: 0; right: 0;
+      height: 46px;
+      background: #0d1118cc;
+      backdrop-filter: blur(6px);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 50;
+    }
+    .topbar .inner {
+      width: 100%; max-width: 980px; padding: 0 14px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px;
+    }
+    .brand {
+      display: flex; align-items: center; gap: 10px;
+      color: var(--text); font-weight: 700;
+    }
+    .brand .logo { width: 22px; height: 22px; border-radius: 6px; }
+    .top-actions { display:flex; align-items:center; gap:10px; }
+    .chip {
+      font-size: 12px; padding: 4px 8px; border-radius: 999px;
+      border: 1px solid var(--border); color: var(--muted);
+    }
+    .top-btn {
+      appearance:none; border:1px solid var(--border);
+      background: linear-gradient(180deg, #27304a 0%, #20273a 100%);
+      color: var(--text); padding: 6px 10px; border-radius: 10px; font-weight:600;
+      cursor: pointer;
+    }
+    .top-btn.primary {
+      border-color: #2a3a7a;
+      background: linear-gradient(180deg, #324cb3 0%, #2a43a1 100%);
+    }
+    /* Tabs for Unpaid/Paid */
+    .tabs { display:flex; gap:8px; margin: 10px 0 14px; }
+    .tab {
+      padding: 6px 10px; border-radius: 999px; border:1px solid var(--border);
+      background:#141925; color: var(--muted); cursor:pointer; font-weight:600; font-size:13px;
+    }
+    .tab.active { color: white; border-color:#2a3a7a; background:#1a2445; }
+    body.with-topbar { padding-top: 60px; }
   </style>
 </head>
-<body>
+<body class="with-topbar">
+  <div class="topbar" id="topbar">
+    <div class="inner">
+      <div class="brand">
+        <img class="logo" src="sifter-logo.png" alt="SFTR" />
+        <span>Siftr Invoice Credit</span>
+      </div>
+      <div class="top-actions">
+        <span id="top-balance" class="chip">Balance: —</span>
+        <span id="top-address" class="chip">Account: —</span>
+        <button id="top-connect" class="top-btn primary">Connect Account</button>
+      </div>
+    </div>
+  </div>
   <div class="wrap">
     <!-- Invoices List -->
     <section id="page-list" class="card">
       <h1>Invoices</h1>
       <h2>Select an invoice to pay</h2>
+      <div class="tabs">
+        <div id="tab-unpaid" class="tab active">Unpaid</div>
+        <div id="tab-paid" class="tab">Paid</div>
+      </div>
       <ul id="invoice-list" class="list"></ul>
+      <div id="no-items" class="small muted" style="display:none; margin-top:6px;">No items to display.</div>
       <div class="meta">This is a demo list with fixed amounts & IDs. Selecting one opens the invoice drawer.</div>
     </section>
     <div id="drawer-backdrop" class="backdrop hidden"></div>
@@ -146,7 +208,7 @@
         <img class="logo lg" src="sifter-logo.png" alt="SFTR" />
         Invoice
       </h1>
-      <h2>Pay with DDT via MetaMask</h2>
+      <h2>Pay with SFTR via MetaMask</h2>
       <div id="chosen-invoice" class="small" style="margin-bottom:8px;"></div>
 
       <div class="row">
@@ -156,7 +218,7 @@
         </div>
         <div>
           <label>Currency (symbol)</label>
-          <input id="symbol" type="text" value="DDT" />
+          <input id="symbol" type="text" value="SFTR" />
         </div>
       </div>
       <div id="fiatSummary" class="fiatline"></div>
@@ -171,10 +233,6 @@
           <label>Payer Wallet</label>
           <input id="account" type="text" readonly placeholder="Not connected" />
         </div>
-        <div>
-          <label>Network</label>
-          <input id="network" type="text" readonly placeholder="Unknown" />
-        </div>
       </div>
 
       <div class="btns">
@@ -186,6 +244,16 @@
       <div id="alert" class="notice hidden"></div>
     </section>
 
+    <!-- Confirm Page -->
+    <section id="page-confirm" class="hidden">
+      <h1>Confirm Payment</h1>
+      <div id="confirm-body" class="meta"></div>
+      <div class="btns">
+        <button id="btn-cancel">Back</button>
+        <button id="btn-confirm" class="primary">Confirm &amp; Sign</button>
+      </div>
+      <div id="confirm-status" class="meta"></div>
+    </section>
     <!-- Result Page -->
     <section id="page-result" class="hidden">
       <h1 id="result-title">Payment Result</h1>
@@ -207,11 +275,13 @@
     // ============
     // Demo invoice data (fixed for now)
     const DEMO_INVOICES = [
-      { id: "INV-2025-0001", amount: "12.50", symbol: "DDT" },
-      { id: "INV-2025-0002", amount: "49.99", symbol: "DDT" },
-      { id: "INV-2025-0003", amount: "5.00",   symbol: "DDT" },
-      { id: "INV-2025-0004", amount: "199.00", symbol: "DDT" },
+      { id: "INV-2025-0001", amount: "12.50", symbol: "SFTR" },
+      { id: "INV-2025-0002", amount: "49.99", symbol: "SFTR" },
+      { id: "INV-2025-0003", amount: "5.00",   symbol: "SFTR" },
+      { id: "INV-2025-0004", amount: "199.00", symbol: "SFTR" },
     ];
+    const PAID_INVOICES = [];
+    let showPaid = false; // false = show unpaid; true = show paid
     const PRICE_USD_PER_SFTR = 1.25; // fixed price for display
     function usdFor(amountStr) {
       const a = parseFloat((amountStr || "0").replace(/,/g, "").trim());
@@ -221,23 +291,56 @@
 
     function renderInvoiceList() {
       const ul = document.getElementById("invoice-list");
+      const noItems = document.getElementById("no-items");
       ul.innerHTML = "";
-      DEMO_INVOICES.forEach((inv, idx) => {
+      const source = showPaid ? PAID_INVOICES : DEMO_INVOICES;
+
+      if (source.length === 0) {
+        noItems.style.display = "block";
+        return;
+      } else {
+        noItems.style.display = "none";
+      }
+
+      source.forEach((inv) => {
         const li = document.createElement("li");
-        li.className = "rowline clicky";
+        li.className = "rowline" + (showPaid ? "" : " clicky");
         li.innerHTML = `
           <div class="left">
             <img class="logo" src="sifter-logo.png" alt="SFTR" />
             <div>
               <div><b>${inv.amount} ${inv.symbol}</b></div>
               <div class="small">${inv.id}</div>
+              ${inv.memo ? `<div class="small muted">Memo: ${inv.memo}</div>` : ""}
+              ${inv.txHash ? `<div class="small txlink">Tx: <span class="kbd">${inv.txHash.slice(0,10)}…</span></div>` : ""}
             </div>
           </div>
           <div class="muted" data-usd>${usdFor(inv.amount)}</div>
         `;
-        li.addEventListener("click", () => selectInvoice(inv));
+        if (!showPaid) {
+          li.addEventListener("click", () => selectInvoice(inv));
+        }
         ul.appendChild(li);
       });
+    }
+    function shortAddr(a) { return a ? a.slice(0,6) + "…" + a.slice(-4) : "—"; }
+
+    async function refreshTopbar() {
+      try {
+        const addr = accounts?.[0] || "";
+        $("top-address").textContent = addr ? `Account: ${shortAddr(addr)}` : "Account: —";
+
+        let balStr = "—";
+        if (addr && erc20) {
+          const bal = await erc20.balanceOf(addr);
+          balStr = `${fmtUnits(bal)} ${CONFIG.TOKEN_SYMBOL || "SFTR"}`;
+        }
+        $("top-balance").textContent = `Balance: ${balStr}`;
+
+        $("top-connect").textContent = addr ? "Connected" : "Connect Account";
+      } catch (e) {
+        // Non-fatal
+      }
     }
 
     const CONFIG = {
@@ -251,7 +354,7 @@
       TOKEN_CONTRACT: "0x396ee78f55f3d95442257fd14A9d60Dbe46C233d",
 
       // Human symbol & decimals (used for display + parsing). Decimals MUST match your token.
-      TOKEN_SYMBOL: "DDT",
+      TOKEN_SYMBOL: "SFTR",
       TOKEN_DECIMALS: 18,
 
       // Do we need an explicit approval step? (true for transferFrom-based contracts)
@@ -338,6 +441,15 @@
       show($("page-invoice"));
       hide($("page-result"));
     }
+    function showPage(sectionId) {
+      ["page-invoice","page-confirm","page-result"].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (id === sectionId) { el.classList.remove("hidden"); }
+        else { el.classList.add("hidden"); }
+      });
+      openDrawer();
+    }
 
     function selectInvoice(inv) {
       // Prefill the invoice form
@@ -345,6 +457,7 @@
       $("symbol").value = inv.symbol;
       $("invoiceId").value = inv.id;
       $("chosen-invoice").textContent = `Selected: ${inv.id} · ${inv.amount} ${inv.symbol}`;
+      selectedInvoice = inv;
       updateFiatLine();
       // Open drawer with invoice form visible
       show($("page-invoice"));
@@ -357,6 +470,8 @@
     // ============
     let provider, signer, accounts, chainId;
     let erc20, payContract;
+    let selectedInvoice = null;
+    let pendingPayment = null; // { amountWei, amountStr, memo }
 
     async function ensureProvider() {
       if (!window.ethereum) {
@@ -372,7 +487,6 @@
       signer = provider.getSigner();
       chainId = await provider.send("eth_chainId", []);
       $("account").value = accounts[0] || "";
-      $("network").value = chainId;
       if (CONFIG.EXPECTED_CHAIN_ID_HEX && chainId !== CONFIG.EXPECTED_CHAIN_ID_HEX) {
         setAlert(`Wrong network (chainId ${chainId}). Please switch to ${CONFIG.EXPECTED_CHAIN_ID_HEX}.`, false);
       } else {
@@ -396,6 +510,8 @@
 
       $("btn-pay").disabled = false;
       setStatus("Wallet connected.");
+      document.body.classList.add("with-topbar");
+      await refreshTopbar();
     }
 
     async function pay() {
@@ -410,48 +526,126 @@
         if (amt.lte(0)) throw new Error("Amount must be greater than 0.");
 
         const from = await signer.getAddress();
-
-        if (CONFIG.REQUIRE_APPROVAL) {
-          setStatus("Checking allowance...");
-          const currentAllowance = await erc20.allowance(from, CONFIG.PAYMENT_CONTRACT);
-          if (currentAllowance.lt(amt)) {
-            setStatus("Sending approval...");
-            const txA = await erc20.approve(CONFIG.PAYMENT_CONTRACT, amt);
-            setAlert(`Approval tx submitted: ${txA.hash}`);
-            await txA.wait();
-            setStatus("Approval confirmed.");
-          } else {
-            setStatus("Allowance sufficient; skipping approval.");
-          }
-        }
-
         const invoiceIdStr = $("invoiceId").value.trim();
         const memo = invoiceIdStr || `invoice-${Date.now()}`;
-        const { method, args } = CONFIG.PAY_FUNCTION_ARGS(amt, memo);
 
-        setStatus("Sending payment...");
-        const tx = await payContract[method](...args);
-        setAlert(`Payment tx submitted: ${tx.hash}`);
-        const rec = await tx.wait();
+        // Store for the confirm step
+        pendingPayment = { amountWei: amt, amountStr, memo };
 
-        // Done → Result page
-        switchPage(true, {
-          title: "✅ Payment Confirmed",
-          body: `Paid <span class="kbd">${$("symbol").value}</span> <b>${amountStr}</b> (${usdFor(amountStr)}) (decimals ${CONFIG.TOKEN_DECIMALS}).<br>
-                 From <span class="kbd">${from}</span> to <span class="kbd">${CONFIG.PAYMENT_CONTRACT}</span>.`,
-          txHash: tx.hash
-        });
+        // Confirmation summary
+        $("confirm-body").innerHTML =
+          `You're about to pay <b>${amountStr} ${$("symbol").value}</b> (${usdFor(amountStr)})<br>
+           From <span class="kbd">${from}</span><br>
+           To <span class="kbd">${CONFIG.PAYMENT_CONTRACT}</span><br>
+           Memo <span class="kbd">${memo}</span>`;
+
+        $("confirm-status").textContent = "";
+        $("btn-confirm").disabled = false;
+
+        // Show confirm page
+        showPage("page-confirm");
       } catch (err) {
         console.error(err);
         const msg = err?.data?.message || err?.reason || err?.message || String(err);
-        if (msg.toLowerCase().includes("user rejected")) {
-          switchPage(true, { title: "🚫 Payment Rejected", body: "You cancelled the transaction in MetaMask." });
-        } else {
-          setAlert(`Error: ${msg}`, false);
-          $("btn-pay").disabled = false;
-        }
+        setAlert(`Error: ${msg}`, false);
+        $("btn-pay").disabled = false;
       }
     }
+
+    async function confirmAndSend() {
+      try {
+        $("btn-confirm").disabled = true;
+        $("confirm-status").textContent = "Preparing transaction...";
+
+        if (!pendingPayment) throw new Error("Nothing to submit. Please restart the payment.");
+
+        const from = await signer.getAddress();
+        const { amountWei, amountStr, memo } = pendingPayment;
+
+        // Approval if required
+        if (CONFIG.REQUIRE_APPROVAL) {
+          $("confirm-status").textContent = "Checking allowance...";
+          const currentAllowance = await erc20.allowance(from, CONFIG.PAYMENT_CONTRACT);
+          if (currentAllowance.lt(amountWei)) {
+            $("confirm-status").textContent = "Sending approval...";
+            const txA = await erc20.approve(CONFIG.PAYMENT_CONTRACT, amountWei);
+            await txA.wait();
+            $("confirm-status").textContent = "Approval confirmed.";
+          } else {
+            $("confirm-status").textContent = "Allowance sufficient; skipping approval.";
+          }
+        }
+
+        // Send payment
+        const { method, args } = CONFIG.PAY_FUNCTION_ARGS(amountWei, memo);
+        $("confirm-status").textContent = "Sending payment...";
+        const tx = await payContract[method](...args);
+        const receipt = await tx.wait();
+        const txHash = receipt?.transactionHash || tx?.hash || "";
+
+        // Transaction complete → show result
+        $("result-title").textContent = "✅ Transaction Complete";
+        $("result-body").innerHTML =
+          `Paid <span class="kbd">${$("symbol").value}</span> <b>${amountStr}</b> (${usdFor(amountStr)}).<br>
+          From <span class="kbd">${from}</span> to <span class="kbd">${CONFIG.PAYMENT_CONTRACT}</span>.<br>
+          Memo <span class="kbd">${memo}</span>`;
+        if (txHash && CONFIG.EXPLORER_TX_BASE) {
+          $("txlink").innerHTML = `Tx: <a href="${CONFIG.EXPLORER_TX_BASE}${txHash}" target="_blank" rel="noreferrer">${txHash}</a>`;
+          show($("txlink"));
+        } else {
+          $("txlink").innerHTML = "";
+          hide($("txlink"));
+        }
+        showPage("page-result");
+
+        // Remove from unpaid and add to paid
+        if (selectedInvoice) {
+          const idx = DEMO_INVOICES.findIndex(x => x.id === selectedInvoice.id);
+          if (idx >= 0) {
+            const paid = { ...DEMO_INVOICES[idx], memo, txHash };
+            DEMO_INVOICES.splice(idx, 1);
+            PAID_INVOICES.unshift(paid);
+          }
+          renderInvoiceList();
+        }
+
+        // Refresh topbar balance
+        await refreshTopbar();
+
+        // Reset pending state
+        pendingPayment = null;
+
+        // Small pause, then back to main list (show unpaid list by default)
+        setTimeout(() => {
+          showPaid = false;
+          updateTabsUI();
+          renderInvoiceList();
+          closeDrawer();
+          $("btn-pay").disabled = false;
+          setStatus("");
+          setAlert("");
+        }, 1200);
+      } catch (err) {
+        console.error(err);
+        const msg = err?.data?.message || err?.reason || err?.message || String(err);
+        $("confirm-status").textContent = "";
+        setAlert(`Error: ${msg}`, false);
+        $("btn-confirm").disabled = false;
+      }
+    }
+    function updateTabsUI() {
+      const u = $("tab-unpaid"), p = $("tab-paid");
+      if (showPaid) {
+        u.classList.remove("active"); p.classList.add("active");
+        $("page-list").querySelector("h1").textContent = "Paid Invoices";
+        $("page-list").querySelector("h2").textContent = "Review completed payments";
+      } else {
+        p.classList.remove("active"); u.classList.add("active");
+        $("page-list").querySelector("h1").textContent = "Invoices";
+        $("page-list").querySelector("h2").textContent = "Select an invoice to pay";
+      }
+    }
+
 
     function switchPage(toResult, { title = "", body = "", txHash = "" } = {}) {
       if (toResult) {
@@ -480,13 +674,36 @@
     // ============
     $("btn-connect").addEventListener("click", connect);
     $("btn-pay").addEventListener("click", pay);
-    $("btn-back").addEventListener("click", () => switchPage(false));
+    $("btn-confirm").addEventListener("click", confirmAndSend);
+    $("btn-cancel").addEventListener("click", () => showPage("page-invoice"));
+    $("btn-back").addEventListener("click", () => showPage("page-invoice"));
     $("btn-close").addEventListener("click", closeDrawer);
     $("drawer-backdrop").addEventListener("click", closeDrawer);
     $("amount").addEventListener("input", updateFiatLine);
     $("symbol").addEventListener("input", updateFiatLine);
+    $("tab-unpaid").addEventListener("click", () => { showPaid = false; updateTabsUI(); renderInvoiceList(); });
+    $("tab-paid").addEventListener("click", () => { showPaid = true; updateTabsUI(); renderInvoiceList(); });
+    $("top-connect").addEventListener("click", connect);
+
+    // Auto-connect if already authorized
+    (async function autoConnectIfAuthorized() {
+      if (window.ethereum) {
+        try {
+          const prov = await ensureProvider();
+          const accs = await prov.send("eth_accounts", []);
+          if (accs && accs.length) {
+            await connect();
+          } else {
+            document.body.classList.add("with-topbar");
+            await refreshTopbar();
+          }
+        } catch {}
+      }
+    })();
+
     renderInvoiceList();
     updateFiatLine();
+    updateTabsUI();
 
     // Autofill from URL params (?amount=12.5&symbol=USDC&invoice=INV-1)
     (function initFromQuery() {
