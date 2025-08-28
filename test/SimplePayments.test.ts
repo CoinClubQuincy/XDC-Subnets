@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import "@nomicfoundation/hardhat-chai-matchers";
 import "@nomicfoundation/hardhat-ethers";
+import "@nomicfoundation/hardhat-toolbox-mocha-ethers";
 import hre from "hardhat";
 
 // Ultra-robust shim: avoid relying on Hardhat's TS module augmentation

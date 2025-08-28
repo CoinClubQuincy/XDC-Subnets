@@ -1,28 +1,27 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "CommonJS",
+    "moduleResolution": "node",
     "types": [
-      "node",
+      "hardhat",
       "mocha",
       "chai",
-      "hardhat",
-      "@nomicfoundation/hardhat-ethers",
-      "@nomicfoundation/hardhat-ethers-chai-matchers"
+      "node"
     ],
-    "resolveJsonModule": true,
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "strict": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "strict": true
   },
   "include": [
-    "hardhat.config.ts",
-    "scripts",
-    "test",
-    "contracts",
-    "typechain-types",
-    "tasks"
+    "hardhat.config.ts", 
+    "test", 
+    "scripts", 
+    "ignition",
+    "typechain-types"
+  ],
+  "files": [
+    "./hardhat.config.ts"
   ]
 }

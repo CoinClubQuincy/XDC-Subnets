@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import hre from "hardhat";
 import { parseUnits } from "ethers";
+import "@nomicfoundation/hardhat-toolbox-mocha-ethers";
 
 // Hardhat v3 attaches ethers to the HRE at runtime.
 // If your editor doesn't have the plugin types loaded, TS may complain.

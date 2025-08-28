@@ -10,17 +10,23 @@
     "clean": "hardhat clean"
   },
   "devDependencies": {
-    "@nomicfoundation/hardhat-ethers": "4.0.0",
-    "@nomicfoundation/hardhat-ethers-chai-matchers": "3.0.0",
+    "@nomicfoundation/hardhat-ethers": "^4.0.0",
+    "@nomicfoundation/hardhat-ethers-chai-matchers": "^3.0.0",
+    "@nomicfoundation/hardhat-mocha": "^3.0.1",
+    "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.0",
+    "@nomicfoundation/hardhat-viem": "^3.0.0",
     "@openzeppelin/contracts": "^5.0.0",
-    "@types/mocha": "^10",
-    "@types/node": "^20",
-    "chai": "^5.1.2",
+    "@types/chai": "^5.2.2",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.19.11",
+    "chai": "^5.3.3",
     "dotenv": "^16.4.5",
-    "ethers": "^6",
-    "hardhat": "3.0.1",
+    "ethers": "^6.15.0",
+    "forge-std": "^1.1.2",
+    "hardhat": "^3.0.3",
     "or": "^0.2.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5"
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
   }
 }

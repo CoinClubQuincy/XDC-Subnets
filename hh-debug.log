@@ -1,0 +1,46 @@
+2025-08-27T18:28:06.295Z hardhat:cli:telemetry:telemetry-permissions Telemetry is allowed in the current environment: false
+2025-08-27T18:28:06.296Z hardhat:cli:telemetry:sentry:reporter Reporter not initialized because telemetry is not allowed
+2025-08-27T18:28:06.296Z hardhat:core:cli:main Hardhat CLI started
+2025-08-27T18:28:06.296Z hardhat:core:cli:main Parsed builtin global options
+2025-08-27T18:28:06.387Z hardhat:core:cli:main User config imported
+2025-08-27T18:28:06.390Z hardhat:core:cli:main Resolved plugins
+2025-08-27T18:28:06.391Z hardhat:core:cli:main Creating Hardhat Runtime Environment
+2025-08-27T18:28:06.507Z hardhat:core:cli:main Running task "test"
+2025-08-27T18:28:06.508Z hardhat:cli:telemetry:telemetry-permissions Telemetry is allowed in the current environment: false
+Compiling your Solidity contracts...
+2025-08-27T18:28:06.597Z hardhat:util:multi-process-mutex Creating mutex with name 'compiler-download'
+2025-08-27T18:28:06.597Z hardhat:util:multi-process-mutex Creating mutex with name 'compiler-download-list'
+2025-08-27T18:28:06.597Z hardhat:util:multi-process-mutex Starting mutex process with mutex file '/var/folders/g7/zxtq98p166s5ndm5c9nnf2h00000gn/T/compiler-download-list.txt'
+2025-08-27T18:28:06.597Z hardhat:util:multi-process-mutex Mutex acquired at path '/var/folders/g7/zxtq98p166s5ndm5c9nnf2h00000gn/T/compiler-download-list.txt'
+2025-08-27T18:28:06.597Z hardhat:solidity:downloader Checking if the compiler list for macosx-amd64 should be downloaded at /Users/quincyj/Library/Caches/hardhat-nodejs/compilers-v3/macosx-amd64/list.json
+2025-08-27T18:28:06.598Z hardhat:util:multi-process-mutex Mutex released at path '/var/folders/g7/zxtq98p166s5ndm5c9nnf2h00000gn/T/compiler-download-list.txt'
+2025-08-27T18:28:06.598Z hardhat:util:multi-process-mutex Deleting mutex file at path '/var/folders/g7/zxtq98p166s5ndm5c9nnf2h00000gn/T/compiler-download-list.txt'
+2025-08-27T18:28:06.598Z hardhat:util:multi-process-mutex Mutex released at path '/var/folders/g7/zxtq98p166s5ndm5c9nnf2h00000gn/T/compiler-download-list.txt'
+2025-08-27T18:28:06.600Z hardhat:util:multi-process-mutex Creating mutex with name 'compiler-download'
+2025-08-27T18:28:06.600Z hardhat:util:multi-process-mutex Creating mutex with name 'compiler-download-list'
+2025-08-27T18:28:06.600Z hardhat:util:multi-process-mutex Starting mutex process with mutex file '/var/folders/g7/zxtq98p166s5ndm5c9nnf2h00000gn/T/compiler-download-list.txt'
+2025-08-27T18:28:06.601Z hardhat:util:multi-process-mutex Mutex acquired at path '/var/folders/g7/zxtq98p166s5ndm5c9nnf2h00000gn/T/compiler-download-list.txt'
+2025-08-27T18:28:06.601Z hardhat:solidity:downloader Checking if the compiler list for wasm should be downloaded at /Users/quincyj/Library/Caches/hardhat-nodejs/compilers-v3/wasm/list.json
+2025-08-27T18:28:06.601Z hardhat:util:multi-process-mutex Mutex released at path '/var/folders/g7/zxtq98p166s5ndm5c9nnf2h00000gn/T/compiler-download-list.txt'
+2025-08-27T18:28:06.601Z hardhat:util:multi-process-mutex Deleting mutex file at path '/var/folders/g7/zxtq98p166s5ndm5c9nnf2h00000gn/T/compiler-download-list.txt'
+2025-08-27T18:28:06.601Z hardhat:util:multi-process-mutex Mutex released at path '/var/folders/g7/zxtq98p166s5ndm5c9nnf2h00000gn/T/compiler-download-list.txt'
+2025-08-27T18:28:06.831Z hardhat:core:solidity:build-system Using build profile default
+2025-08-27T18:28:06.831Z hardhat:core:solidity:build-system Building compilation job for root file contracts/Assets.sol with input source name project/contracts/Assets.sol and user source name contracts/Assets.sol
+2025-08-27T18:28:06.836Z hardhat:core:solidity:build-system Building compilation job for root file contracts/Payments.sol with input source name project/contracts/Payments.sol and user source name contracts/Payments.sol
+2025-08-27T18:28:06.838Z hardhat:util:multi-process-mutex Creating mutex with name 'compiler-download'
+2025-08-27T18:28:06.838Z hardhat:util:multi-process-mutex Creating mutex with name 'compiler-download-list'
+2025-08-27T18:28:06.861Z hardhat:core:solidity:build-system Merging compilation jobs
+2025-08-27T18:28:06.862Z hardhat:core:solidity:build-system Emitting artifacts of successful build
+
+Nothing to compile
+2025-08-27T18:28:06.872Z hardhat:core:solidity:build-system Cleaning up artifacts
+
+2025-08-27T18:28:06.895Z hardhat:core:solidity:build-system Using build profile default
+2025-08-27T18:28:06.895Z hardhat:core:solidity:build-system Merging compilation jobs
+2025-08-27T18:28:06.895Z hardhat:core:solidity:build-system Emitting artifacts of successful build
+Running Solidity tests
+
+
+
+  0 passing
+
