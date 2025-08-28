@@ -146,7 +146,7 @@
         <img class="logo lg" src="sifter-logo.png" alt="SFTR" />
         Invoice
       </h1>
-      <h2>Pay with SFTR via MetaMask</h2>
+      <h2>Pay with DDT via MetaMask</h2>
       <div id="chosen-invoice" class="small" style="margin-bottom:8px;"></div>
 
       <div class="row">
@@ -156,7 +156,7 @@
         </div>
         <div>
           <label>Currency (symbol)</label>
-          <input id="symbol" type="text" value="SFTR" />
+          <input id="symbol" type="text" value="DDT" />
         </div>
       </div>
       <div id="fiatSummary" class="fiatline"></div>
@@ -207,10 +207,10 @@
     // ============
     // Demo invoice data (fixed for now)
     const DEMO_INVOICES = [
-      { id: "INV-2025-0001", amount: "12.50", symbol: "SFTR" },
-      { id: "INV-2025-0002", amount: "49.99", symbol: "SFTR" },
-      { id: "INV-2025-0003", amount: "5.00",   symbol: "SFTR" },
-      { id: "INV-2025-0004", amount: "199.00", symbol: "SFTR" },
+      { id: "INV-2025-0001", amount: "12.50", symbol: "DDT" },
+      { id: "INV-2025-0002", amount: "49.99", symbol: "DDT" },
+      { id: "INV-2025-0003", amount: "5.00",   symbol: "DDT" },
+      { id: "INV-2025-0004", amount: "199.00", symbol: "DDT" },
     ];
     const PRICE_USD_PER_SFTR = 1.25; // fixed price for display
     function usdFor(amountStr) {
@@ -245,31 +245,31 @@
       EXPECTED_CHAIN_ID_HEX: "0x539", // 0x539 = 1337 (Ganache). Set to null to disable.
 
       // Address of your payment contract that ultimately receives the ERC-20.
-      PAYMENT_CONTRACT: "0xYourPaymentContractAddress",
+      PAYMENT_CONTRACT: "0x50bDa728b919D7854cdbffC94c7d2ADa188630ED",
 
       // The ERC-20 token contract the invoice is denominated in.
-      TOKEN_CONTRACT: "0xYourErc20TokenAddress",
+      TOKEN_CONTRACT: "0x396ee78f55f3d95442257fd14A9d60Dbe46C233d",
 
       // Human symbol & decimals (used for display + parsing). Decimals MUST match your token.
-      TOKEN_SYMBOL: "SFTR",
-      TOKEN_DECIMALS: 6,
+      TOKEN_SYMBOL: "DDT",
+      TOKEN_DECIMALS: 18,
 
       // Do we need an explicit approval step? (true for transferFrom-based contracts)
       REQUIRE_APPROVAL: true,
 
       // --- Payment contract ABI & method ---
       // Replace with your actual ABI + method. Below is a minimal example for:
-      // function pay(bytes32 invoiceId, uint256 amount) external;
+      // function pay(uint256 amount, string memo) external;
       PAYMENT_ABI: [
-        "function pay(bytes32 invoiceId, uint256 amount) external",
-        "event PaymentReceived(address indexed from, bytes32 indexed invoiceId, uint256 amount)"
+        "function pay(uint256 amount, string memo) external",
+        "event PaymentReceived(address indexed payer, uint256 amount, string memo)"
       ],
 
       // If your method signature differs, adapt this builder.
       // It must return: { method: string, args: any[] }
-      PAY_FUNCTION_ARGS: (invoiceIdBytes32, amountWei) => ({
+      PAY_FUNCTION_ARGS: (amountWei, memo) => ({
         method: "pay",
-        args: [invoiceIdBytes32, amountWei]
+        args: [amountWei, memo]
       }),
 
       // Minimal ERC-20 ABI
@@ -406,7 +406,6 @@
         if (!signer) await connect();
 
         const amountStr = $("amount").value;
-        const invoiceIdStr = $("invoiceId").value.trim();
         const amt = toUnits(amountStr, CONFIG.TOKEN_DECIMALS);
         if (amt.lte(0)) throw new Error("Amount must be greater than 0.");
 
@@ -426,8 +425,9 @@
           }
         }
 
-        const invoiceBytes32 = toBytes32(invoiceIdStr);
-        const { method, args } = CONFIG.PAY_FUNCTION_ARGS(invoiceBytes32, amt);
+        const invoiceIdStr = $("invoiceId").value.trim();
+        const memo = invoiceIdStr || `invoice-${Date.now()}`;
+        const { method, args } = CONFIG.PAY_FUNCTION_ARGS(amt, memo);
 
         setStatus("Sending payment...");
         const tx = await payContract[method](...args);

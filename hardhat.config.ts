@@ -11,12 +11,14 @@ const config = {
     version: "0.8.26",
     settings: {
       optimizer: { enabled: true, runs: 200 },
+      evmVersion: "paris",
     },
   },
   networks: {
     ganache: {
       type: "http",
       url: process.env.GANACHE_URL || "http://127.0.0.1:8545",
+      chainId: 1337,
       accounts: (() => {
         const raw = process.env.PRIVATE_KEYS ?? "";
         const keys = raw
