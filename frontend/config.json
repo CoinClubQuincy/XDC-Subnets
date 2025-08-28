@@ -1,0 +1,37 @@
+{
+  "app": { "name": "Siftr Invoice", "logo": "sifter-logo.png", "theme": "dark" },
+  "providers": { "default": "web3auth" },
+  "chain": { "expectedChainIdHex": "0x539", "explorerTxBase": "" },
+  "token": { "contract": "0x396ee78f55f3d95442257fd14A9d60Dbe46C233d", "symbol": "SFTR", "decimals": 18 },
+  "payment": {
+    "contract": "0x50bDa728b919D7854cdbffC94c7d2ADa188630ED",
+    "requireApproval": true,
+    "abi": [
+      "function pay(uint256 amount, string memo) external",
+      "event PaymentReceived(address indexed payer, uint256 amount, string memo)"
+    ]
+  },
+  "erc20": {
+    "abi": [
+      "function decimals() view returns (uint8)",
+      "function symbol() view returns (string)",
+      "function balanceOf(address) view returns (uint256)",
+      "function allowance(address owner, address spender) view returns (uint256)",
+      "function approve(address spender, uint256 amount) returns (bool)"
+    ]
+  },
+  "web3auth": {
+    "clientId": "BA3_NpnvvlMtl2LcPM2KCWoQ0QY9GIQNcTDwF3LDHffofkW3sn_ZLXT-k-TI5K1JO1TTMsonmMcBniTWU87EHNQ",
+    "network": "SAPPHIRE_DEVNET",
+    "chain": {
+      "chainNamespace": "eip155",
+      "chainId": null,
+      "rpcTarget": "http://127.0.0.1:8545",
+      "displayName": "Local Dev",
+      "blockExplorer": "",
+      "ticker": "SFTR",
+      "tickerName": "Siftr",
+      "logo": "sifter-logo.png"
+    }
+  }
+}
