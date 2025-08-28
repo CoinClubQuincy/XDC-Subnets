@@ -78,14 +78,76 @@
     .muted { color: var(--muted); }
     .txlink a { color: var(--accent); text-decoration: none; }
     .hidden { display: none; }
+
+    /* Drawer for invoice/details */
+    .drawer {
+      position: fixed;
+      top: 0; right: 0; bottom: 0;
+      width: min(560px, 100%);
+      background: transparent;
+      transform: translateX(100%);
+      transition: transform .28s ease;
+      z-index: 30;
+      display: grid;
+      align-items: start;
+      padding: 24px;
+    }
+    .drawer.open { transform: translateX(0); }
+    .drawer .panel { box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+
+    /* Dim the page when drawer is open */
+    .backdrop {
+      position: fixed; inset: 0;
+      background: rgba(5, 8, 15, 0.55);
+      backdrop-filter: blur(2px);
+      opacity: 0; pointer-events: none;
+      transition: opacity .28s ease;
+      z-index: 20;
+    }
+    .backdrop.show { opacity: 1; pointer-events: auto; }
+
+    /* List styles */
+    .list { list-style: none; padding: 0; margin: 0; }
+    .list li { display: flex; justify-content: space-between; align-items: center; }
+    .rowline {
+      display: grid; grid-template-columns: 1fr auto; gap: 10px;
+      padding: 12px 10px; border: 1px solid var(--border); border-radius: 12px;
+      background: linear-gradient(180deg, #171c27 0%, #121722 100%);
+      margin-bottom: 10px;
+    }
+    .rowline .left { display:flex; gap:10px; align-items:center; }
+    .pill { padding: 2px 8px; border:1px solid var(--border); border-radius: 999px; font-size: 12px; color: var(--muted); }
+    .small { font-size: 12px; color: var(--muted); }
+    .clicky { cursor: pointer; }
+    .logo { width: 24px; height: 24px; border-radius: 6px; border:1px solid var(--border); background:#0e1118; object-fit: cover; }
+    .logo.lg { width: 32px; height: 32px; }
+    .fiatline { margin-top: 6px; font-size: 12px; color: var(--muted); }
   </style>
 </head>
 <body>
   <div class="wrap">
+    <!-- Invoices List -->
+    <section id="page-list" class="card">
+      <h1>Invoices</h1>
+      <h2>Select an invoice to pay</h2>
+      <ul id="invoice-list" class="list"></ul>
+      <div class="meta">This is a demo list with fixed amounts & IDs. Selecting one opens the invoice drawer.</div>
+    </section>
+    <div id="drawer-backdrop" class="backdrop hidden"></div>
+    <div id="drawer" class="drawer">
+      <div class="panel card">
+        <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom:8px;">
+          <div class="muted">Invoice Details</div>
+          <button id="btn-close" title="Close" aria-label="Close">✕</button>
+        </div>
     <!-- Invoice Page -->
-    <section id="page-invoice" class="card">
-      <h1>Invoice</h1>
+    <section id="page-invoice">
+      <h1 style="display:flex; align-items:center; gap:10px;">
+        <img class="logo lg" src="sifter-logo.png" alt="SFTR" />
+        Invoice
+      </h1>
       <h2>Pay with SFTR via MetaMask</h2>
+      <div id="chosen-invoice" class="small" style="margin-bottom:8px;"></div>
 
       <div class="row">
         <div>
@@ -97,6 +159,7 @@
           <input id="symbol" type="text" value="SFTR" />
         </div>
       </div>
+      <div id="fiatSummary" class="fiatline"></div>
 
       <label>Invoice ID (optional)</label>
       <input id="invoiceId" type="text" placeholder="e.g. INV-2025-0001" />
@@ -124,7 +187,7 @@
     </section>
 
     <!-- Result Page -->
-    <section id="page-result" class="card hidden">
+    <section id="page-result" class="hidden">
       <h1 id="result-title">Payment Result</h1>
       <div id="result-body" class="meta"></div>
       <div class="txlink meta" id="txlink"></div>
@@ -132,6 +195,8 @@
         <button id="btn-back">Back to Invoice</button>
       </div>
     </section>
+      </div>
+    </div>
   </div>
 
   <!-- Ethers.js (v5) -->
@@ -140,6 +205,41 @@
     // ============
     // CONFIG—EDIT THESE
     // ============
+    // Demo invoice data (fixed for now)
+    const DEMO_INVOICES = [
+      { id: "INV-2025-0001", amount: "12.50", symbol: "SFTR" },
+      { id: "INV-2025-0002", amount: "49.99", symbol: "SFTR" },
+      { id: "INV-2025-0003", amount: "5.00",   symbol: "SFTR" },
+      { id: "INV-2025-0004", amount: "199.00", symbol: "SFTR" },
+    ];
+    const PRICE_USD_PER_SFTR = 1.25; // fixed price for display
+    function usdFor(amountStr) {
+      const a = parseFloat((amountStr || "0").replace(/,/g, "").trim());
+      const usd = isNaN(a) ? 0 : a * PRICE_USD_PER_SFTR;
+      return `≈ $${usd.toFixed(2)}`;
+    }
+
+    function renderInvoiceList() {
+      const ul = document.getElementById("invoice-list");
+      ul.innerHTML = "";
+      DEMO_INVOICES.forEach((inv, idx) => {
+        const li = document.createElement("li");
+        li.className = "rowline clicky";
+        li.innerHTML = `
+          <div class="left">
+            <img class="logo" src="sifter-logo.png" alt="SFTR" />
+            <div>
+              <div><b>${inv.amount} ${inv.symbol}</b></div>
+              <div class="small">${inv.id}</div>
+            </div>
+          </div>
+          <div class="muted" data-usd>${usdFor(inv.amount)}</div>
+        `;
+        li.addEventListener("click", () => selectInvoice(inv));
+        ul.appendChild(li);
+      });
+    }
+
     const CONFIG = {
       // Chain you expect (helps prevent mis-sends). Set null to skip enforcing.
       EXPECTED_CHAIN_ID_HEX: "0x539", // 0x539 = 1337 (Ganache). Set to null to disable.
@@ -217,24 +317,39 @@
       if (msg) show(el); else hide(el);
     }
 
-    function switchPage(toResult, { title = "", body = "", txHash = "" } = {}) {
-      if (toResult) {
-        $("result-title").textContent = title || "Payment Result";
-        $("result-body").innerHTML = body || "";
-        const linkEl = $("txlink");
-        if (txHash && CONFIG.EXPLORER_TX_BASE) {
-          linkEl.innerHTML = `Tx: <a href="${CONFIG.EXPLORER_TX_BASE}${txHash}" target="_blank" rel="noreferrer">${txHash}</a>`;
-          show(linkEl);
-        } else {
-          linkEl.innerHTML = "";
-          hide(linkEl);
-        }
-        hide($("page-invoice"));
-        show($("page-result"));
-      } else {
-        show($("page-invoice"));
-        hide($("page-result"));
-      }
+    function updateFiatLine() {
+      const amt = $("amount").value;
+      const sym = $("symbol").value || CONFIG.TOKEN_SYMBOL || "SFTR";
+      $("fiatSummary").textContent = amt ? `${amt} ${sym} · ${usdFor(amt)}` : "";
+    }
+
+    // Drawer helpers
+    function openDrawer() {
+      $("drawer").classList.add("open");
+      $("drawer-backdrop").classList.add("show");
+      $("drawer-backdrop").classList.remove("hidden");
+    }
+    function closeDrawer() {
+      $("drawer").classList.remove("open");
+      $("drawer-backdrop").classList.remove("show");
+      // leave element in DOM but hide for a11y
+      $("drawer-backdrop").classList.add("hidden");
+      // default to showing the invoice form (not result) when closing
+      show($("page-invoice"));
+      hide($("page-result"));
+    }
+
+    function selectInvoice(inv) {
+      // Prefill the invoice form
+      $("amount").value = inv.amount;
+      $("symbol").value = inv.symbol;
+      $("invoiceId").value = inv.id;
+      $("chosen-invoice").textContent = `Selected: ${inv.id} · ${inv.amount} ${inv.symbol}`;
+      updateFiatLine();
+      // Open drawer with invoice form visible
+      show($("page-invoice"));
+      hide($("page-result"));
+      openDrawer();
     }
 
     // ============
@@ -322,7 +437,7 @@
         // Done → Result page
         switchPage(true, {
           title: "✅ Payment Confirmed",
-          body: `Paid <span class="kbd">${$("symbol").value}</span> <b>${amountStr}</b> (decimals ${CONFIG.TOKEN_DECIMALS}).<br>
+          body: `Paid <span class="kbd">${$("symbol").value}</span> <b>${amountStr}</b> (${usdFor(amountStr)}) (decimals ${CONFIG.TOKEN_DECIMALS}).<br>
                  From <span class="kbd">${from}</span> to <span class="kbd">${CONFIG.PAYMENT_CONTRACT}</span>.`,
           txHash: tx.hash
         });
@@ -338,12 +453,40 @@
       }
     }
 
+    function switchPage(toResult, { title = "", body = "", txHash = "" } = {}) {
+      if (toResult) {
+        $("result-title").textContent = title || "Payment Result";
+        $("result-body").innerHTML = body || "";
+        const linkEl = $("txlink");
+        if (txHash && CONFIG.EXPLORER_TX_BASE) {
+          linkEl.innerHTML = `Tx: <a href="${CONFIG.EXPLORER_TX_BASE}${txHash}" target="_blank" rel="noreferrer">${txHash}</a>`;
+          show(linkEl);
+        } else {
+          linkEl.innerHTML = "";
+          hide(linkEl);
+        }
+        hide($("page-invoice"));
+        show($("page-result"));
+        openDrawer();
+      } else {
+        show($("page-invoice"));
+        hide($("page-result"));
+        openDrawer();
+      }
+    }
+
     // ============
     // Wire up UI
     // ============
     $("btn-connect").addEventListener("click", connect);
     $("btn-pay").addEventListener("click", pay);
     $("btn-back").addEventListener("click", () => switchPage(false));
+    $("btn-close").addEventListener("click", closeDrawer);
+    $("drawer-backdrop").addEventListener("click", closeDrawer);
+    $("amount").addEventListener("input", updateFiatLine);
+    $("symbol").addEventListener("input", updateFiatLine);
+    renderInvoiceList();
+    updateFiatLine();
 
     // Autofill from URL params (?amount=12.5&symbol=USDC&invoice=INV-1)
     (function initFromQuery() {
