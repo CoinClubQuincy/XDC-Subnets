@@ -1,0 +1,917 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nuclei / SIFTR – DEX Ops Dashboard</title>
+  <style>
+    :root{
+      --bg:#0e1117;--card:#161b22;--muted:#9fb0d6;--text:#e6edf3;--accent:#7aa2ff;--accent-2:#37d99e;--danger:#ff6b6b;--border:#262b36;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, "Helvetica Neue", Arial, "Apple Color Emoji","Segoe UI Emoji"}
+    a{color:var(--accent);text-decoration:none}
+    a:hover{text-decoration:underline}
+    .wrap{max-width:1200px;margin:0 auto;padding:24px}
+    header{display:flex;align-items:center;gap:16px;margin-bottom:18px}
+    .logo{width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#9ee7ff);display:grid;place-items:center;color:#0b1020;font-weight:900}
+    h1{font-size:22px;margin:0}
+    .sub{color:var(--muted)}
+    .grid{display:grid;gap:16px}
+    @media(min-width:960px){.grid{grid-template-columns:2fr 1fr}}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px}
+    .card h2{font-size:16px;margin:0 0 8px}
+    .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+    .pill{padding:4px 8px;border:1px solid var(--border);border-radius:999px;color:var(--muted)}
+    .ok{color:var(--accent-2)}.bad{color:var(--danger)}
+    .kv{display:grid;grid-template-columns:180px 1fr;gap:10px;margin:6px 0}
+    .kv code{color:#c6e1ff}
+    .section{margin-top:16px}
+    input,select,textarea,button{background:#0f1420;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px}
+    input,textarea{width:100%}
+    button{cursor:pointer}
+    button.primary{background:var(--accent);color:#0b1020;border-color:transparent;font-weight:700}
+    .two{display:grid;gap:12px}
+    @media(min-width:720px){.two{grid-template-columns:1fr 1fr}}
+    .endpoint{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border:1px dashed var(--border);border-radius:10px;margin:6px 0}
+    .endpoint code{color:#c6e1ff}
+    .muted{color:var(--muted)}
+    .hr{height:1px;background:var(--border);margin:12px 0}
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
+    .toast{position:fixed;right:16px;bottom:16px;background:var(--card);border:1px solid var(--border);padding:12px 14px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.3);opacity:0;transform:translateY(8px);transition:.2s}
+    .toast.show{opacity:1;transform:none}
+    .copy{background:#101726}
+    .mini{font-size:12px}
+    .badge{padding:2px 8px;border-radius:999px;font-weight:700}
+    .badge.blue{background:#16253d;color:#9ecbff;border:1px solid #274674}
+    .badge.green{background:#123425;color:#9ff3c7;border:1px solid #1f5c41}
+    .badge.red{background:#3a1b21;color:#ffc3cc;border:1px solid #622b34}
+    .footer{margin-top:24px;color:var(--muted);text-align:center}
+    .table{width:100%;border-collapse:separate;border-spacing:0 8px}
+    .table th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left}
+    .table td,.table th{padding:10px 12px}
+    .rowcard{background:var(--card);border:1px solid var(--border);border-radius:10px}
+    .symbol{font-weight:700}
+    .spark{width:120px;height:32px}
+    .right{text-align:right}
+    .btn{padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:#0f1420;color:var(--text);cursor:pointer}
+    .btn.small{font-size:12px;padding:4px 8px}
+    .grn{color:var(--accent-2)}
+    .red{color:var(--danger)}
+    .note{font-size:12px;color:var(--muted)}
+    .charts{display:grid;gap:12px}
+    .chart-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+    .chart-controls{display:flex;gap:8px;align-items:center}
+    .chart-btn{padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:#0f1420;color:var(--text);cursor:pointer}
+    .chart-btn.active{background:var(--accent);color:#0b1020;border-color:transparent;font-weight:700}
+    .chart{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:8px}
+    /* Orderbook */
+    .ob-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+    .ob-controls{display:flex;gap:8px;align-items:center}
+    .ob{display:grid;gap:8px}
+    .ob table{width:100%;border-collapse:separate;border-spacing:0 6px}
+    .ob th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+    .ob td,.ob th{padding:8px 10px}
+    .ob .rowcard{display:grid;grid-template-columns: repeat(6, 1fr); align-items:center}
+    .ob .side-bid{background:rgba(55,217,158,0.06);border:1px solid rgba(55,217,158,0.25)}
+    .ob .side-ask{background:rgba(255,107,107,0.06);border:1px solid rgba(255,107,107,0.25)}
+    .ob .mono{font-variant-numeric: tabular-nums}
+    canvas#bigChart{width:100%;height:280px;display:block}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo">Σ</div>
+      <div>
+        <h1>Nuclei / SIFTR – DEX Ops Dashboard</h1>
+        <div class="sub">One-page ops view for your Uniswap-backed exchange (v2 & v3).</div>
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- LEFT: Live status and actions -->
+      <section class="card">
+        <h2>Live Status</h2>
+        <div class="row mini">
+          <span class="pill">API Base: <code id="apiBasePill" class="mono">/</code></span>
+          <span class="pill">Chain: <span id="chainId">–</span></span>
+          <span class="pill">Web3: <span id="web3Cli">–</span></span>
+          <span class="pill">Signer: <span id="signer">–</span></span>
+          <span class="pill">Status: <span id="status" class="bad">disconnected</span></span>
+        </div>
+        <div class="section two">
+          <div>
+            <label class="mini muted">API Base URL</label>
+            <input id="apiBase" placeholder="e.g. https://api.yourdomain.com" />
+          </div>
+          <div>
+            <label class="mini muted">API Key (X-API-Key)</label>
+            <input id="apiKey" placeholder="paste key" />
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px; gap:8px">
+          <button class="primary" onclick="savePrefs(); init();">Connect</button>
+          <button onclick="clearPrefs(); toast('Preferences cleared')">Clear</button>
+        </div>
+
+        <div class="section">
+          <div class="kv"><div>WETH</div><div><code id="weth">–</code></div></div>
+          <div class="kv"><div>V2 Router</div><div><code id="v2router">–</code></div></div>
+          <div class="kv"><div>V3 SwapRouter</div><div><code id="v3router">–</code></div></div>
+          <div class="kv"><div>V3 Quoter</div><div><code id="v3quoter">–</code></div></div>
+        </div>
+      </section>
+
+      <!-- RIGHT: Quick links / docs -->
+      <aside class="card">
+        <h2>Endpoints</h2>
+        <div class="endpoint"><code>GET /health</code><button class="copy" onclick="tryGet('/health')">Try</button></div>
+        <div class="endpoint"><code>GET /config</code><button class="copy" onclick="tryGet('/config')">Try</button></div>
+        <div class="endpoint"><code>POST /v2/quote</code><button class="copy" onclick="prefill('v2')">Fill form</button></div>
+        <div class="endpoint"><code>POST /v3/quote</code><button class="copy" onclick="prefill('v3')">Fill form</button></div>
+        <div class="endpoint"><code>POST /v3/quoteMulti</code><button class="copy" onclick="prefill('v3m')">Fill form</button></div>
+        <div class="endpoint"><code>POST /erc20/permit/sign</code><button class="copy" onclick="prefill('permit')">Fill form</button></div>
+        <div class="endpoint"><code>GET /index/receipt/{tx}</code><button class="copy" onclick="prefill('receipt')">Fill form</button></div>
+        <div class="hr"></div>
+        <div class="mini muted">Use the quick forms below to quote, sign permits, and fetch receipts.</div>
+      </aside>
+    </div>
+
+    <!-- FORMS -->
+    <section class="card section">
+      <h2>Quote & Trade Tools</h2>
+      <div class="two">
+        <div>
+          <h3 style="margin:0 0 6px">V2 Quote</h3>
+          <label class="mini muted">Amount In (wei)</label>
+          <input id="v2_amt" placeholder="1000000000000000000" />
+          <label class="mini muted">Path (comma-separated addresses)</label>
+          <input id="v2_path" placeholder="0xIN,0xWETH,0xOUT" />
+          <div class="row" style="margin-top:8px;gap:8px">
+            <button class="primary" onclick="v2Quote()">Quote</button>
+            <button onclick="v2Swap()">Swap</button>
+          </div>
+          <pre class="mono mini" id="v2_out"></pre>
+        </div>
+        <div>
+          <h3 style="margin:0 0 6px">V3 Quote (single-hop)</h3>
+          <div class="two">
+            <div>
+              <label class="mini muted">Token In</label>
+              <input id="v3_in" placeholder="0xIN" />
+            </div>
+            <div>
+              <label class="mini muted">Token Out</label>
+              <input id="v3_out_t" placeholder="0xOUT" />
+            </div>
+          </div>
+          <div class="two">
+            <div>
+              <label class="mini muted">Fee</label>
+              <input id="v3_fee" value="3000" />
+            </div>
+            <div>
+              <label class="mini muted">Amount In (wei)</label>
+              <input id="v3_amt" placeholder="1000000000000000000" />
+            </div>
+          </div>
+          <div class="row" style="margin-top:8px;gap:8px">
+            <button class="primary" onclick="v3Quote()">Quote</button>
+            <button onclick="v3Swap()">Swap</button>
+          </div>
+          <pre class="mono mini" id="v3_out"></pre>
+        </div>
+      </div>
+
+      <div class="two section">
+        <div>
+          <h3 style="margin:0 0 6px">V3 Quote (multi-hop)</h3>
+          <label class="mini muted">Tokens (comma-separated)</label>
+          <input id="v3m_tokens" placeholder="0xIN,0xWETH,0xOUT" />
+          <label class="mini muted">Fees (comma, one fewer than tokens)</label>
+          <input id="v3m_fees" placeholder="3000,500" />
+          <label class="mini muted">Amount In (wei)</label>
+          <input id="v3m_amt" placeholder="1000000000000000000" />
+          <div class="row" style="margin-top:8px;gap:8px">
+            <button class="primary" onclick="v3mQuote()">Quote</button>
+            <button onclick="v3mSwap()">Swap</button>
+          </div>
+          <pre class="mono mini" id="v3m_out"></pre>
+        </div>
+        <div>
+          <h3 style="margin:0 0 6px">Permit (EIP‑2612)</h3>
+          <label class="mini muted">Token</label>
+          <input id="perm_token" placeholder="0xToken" />
+          <label class="mini muted">Spender</label>
+          <input id="perm_spender" placeholder="0xRouter" />
+          <label class="mini muted">Value (uint256)</label>
+          <input id="perm_value" placeholder="max uint e.g. 2**256-1" />
+          <label class="mini muted">Deadline (unix)</label>
+          <input id="perm_deadline" placeholder="1924992000" />
+          <div class="row" style="margin-top:8px;gap:8px">
+            <button class="primary" onclick="permitSign()">Sign</button>
+          </div>
+          <pre class="mono mini" id="perm_out"></pre>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3 style="margin:0 0 6px">Receipt Lookup</h3>
+        <div class="two">
+          <input id="rc_hash" placeholder="0xTXHASH" />
+          <button onclick="fetchReceipt()">Fetch</button>
+        </div>
+        <pre class="mono mini" id="rc_out"></pre>
+      </div>
+    </section>
+
+    <section class="card section" id="market">
+      <h2>Market Monitor</h2>
+      <p class="note">Tracks token prices using your backend quotes. Add tokens and routes; data refreshes automatically.</p>
+
+      <div class="two" style="margin-bottom:12px">
+        <div>
+          <label class="mini muted">Symbol</label>
+          <input id="m_sym" placeholder="e.g. WETH" />
+        </div>
+        <div>
+          <label class="mini muted">Type</label>
+          <select id="m_type">
+            <option value="v2">v2</option>
+            <option value="v3">v3</option>
+            <option value="v3-multi">v3-multi</option>
+          </select>
+        </div>
+        <div>
+          <label class="mini muted">Amount In (wei)</label>
+          <input id="m_amt" placeholder="1000000000000000000" value="1000000000000000000" />
+        </div>
+        <div>
+          <label class="mini muted">Tokens / Path</label>
+          <input id="m_tokens" placeholder="For v2: 0xIN,0xWETH,0xUSDC  |  For v3: tokenIn,tokenOut  |  For v3-multi: 0xIN,0xWETH,0xUSDC" />
+        </div>
+        <div id="m_fees_wrap" style="display:none">
+          <label class="mini muted">Fees (v3-multi)</label>
+          <input id="m_fees" placeholder="3000,500" />
+        </div>
+      </div>
+      <div class="row" style="gap:8px">
+        <button class="btn" onclick="marketAdd()">Add/Update Token</button>
+        <button class="btn" onclick="marketReset()">Clear All</button>
+        <span class="note">Refresh every <span id="m_interval_lbl">30</span>s</span>
+        <input id="m_interval" style="width:90px" value="30" />
+        <button class="btn small" onclick="marketApplyInterval()">Apply</button>
+      </div>
+
+      <div class="section" style="overflow:auto">
+        <table class="table" id="marketTable">
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Route</th>
+              <th class="right">Last Price</th>
+              <th class="right">1m Δ</th>
+              <th>Trend</th>
+              <th class="right">Updated</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="marketBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card section" id="charts">
+      <h2>Charts</h2>
+      <div class="charts">
+        <div class="chart-head">
+          <div class="row mini">
+            <label class="mini muted">Symbol</label>
+            <select id="chart_sym"></select>
+          </div>
+          <div class="chart-controls">
+            <span class="mini muted">Window:</span>
+            <button class="chart-btn" data-min="15">15m</button>
+            <button class="chart-btn active" data-min="60">1h</button>
+            <button class="chart-btn" data-min="240">4h</button>
+            <button class="chart-btn" data-min="1440">1d</button>
+          </div>
+        </div>
+        <div class="chart">
+          <canvas id="bigChart"></canvas>
+        </div>
+        <div class="mini muted" id="chart_meta">—</div>
+      </div>
+    </section>
+
+    <section class="card section" id="orderbook">
+      <h2>Synthetic Orderbook (per AMM curve)</h2>
+      <div class="ob">
+        <div class="ob-head">
+          <div class="row mini">
+            <label class="mini muted">Symbol</label>
+            <select id="ob_sym"></select>
+            <span class="mini muted">(base token is the first address in the configured route)</span>
+          </div>
+          <div class="ob-controls">
+            <label class="mini muted">Levels</label>
+            <input id="ob_levels" style="width:70px" value="10" />
+            <label class="mini muted">Step (% of base amount)</label>
+            <input id="ob_step" style="width:90px" value="5" />
+            <button class="btn" onclick="obBuild()">Rebuild</button>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th colspan="3" class="grn">Bids (sell base → quote)</th>
+              <th colspan="3" class="red">Asks (buy base with quote)</th>
+            </tr>
+            <tr>
+              <th class="mini muted">Base In</th>
+              <th class="mini muted">Quote Out</th>
+              <th class="mini muted">Price (quote/base)</th>
+              <th class="mini muted">Quote In</th>
+              <th class="mini muted">Base Out</th>
+              <th class="mini muted">Price (quote/base)</th>
+            </tr>
+          </thead>
+          <tbody id="ob_body"></tbody>
+        </table>
+        <div class="mini muted" id="ob_meta">—</div>
+      </div>
+    </section>
+
+    <section class="card section">
+      <h2>About this Exchange</h2>
+      <p class="muted">This backend powers programmatic swaps and liquidity ops against Uniswap-style AMMs. It supports v2 x·y=k pools and v3 concentrated-liquidity pools with single- and multi-hop routing. It also includes auth/rate‑limits, EIP‑1559 fee policy, optional MEV/private relay submission, EIP‑2612 permits, and simple DynamoDB logging for ops visibility. Deploy as a Lambda-backed API and/or schedule periodic jobs (e.g., rebalances) with EventBridge.</p>
+      <div class="two">
+        <div class="card" style="background:#101626">
+          <div class="badge blue">Security</div>
+          <ul>
+            <li>Server-side signing with optional Secrets Manager/KMS</li>
+            <li>API-key auth + rate limiting</li>
+            <li>Per‑tx slippage + deadline controls</li>
+          </ul>
+        </div>
+        <div class="card" style="background:#101626">
+          <div class="badge green">Ops</div>
+          <ul>
+            <li>EIP‑1559 gas policy + feeHistory heuristic</li>
+            <li>Optional private RPC for MEV‑aware submission</li>
+            <li>Logs/receipts to DynamoDB (optional)</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">© <span id="year"></span> Nuclei / SIFTR – Built for XDC + EVM networks.</div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    // ===== Market Monitor =====
+    const MARKET_KEY = 'marketTokens';
+    let market = { tokens: {}, interval: 30, timer: null };
+
+    function marketLoad(){
+      try{
+        const saved = JSON.parse(localStorage.getItem(MARKET_KEY) || '{}');
+        market.tokens = saved.tokens || {};
+        market.interval = saved.interval || 30;
+        $('#m_interval').value = market.interval;
+        $('#m_interval_lbl').textContent = market.interval;
+      }catch{ market = { tokens:{}, interval:30, timer:null }; }
+      marketRender();
+      marketStart();
+    }
+
+    function marketSave(){
+      localStorage.setItem(MARKET_KEY, JSON.stringify({ tokens: market.tokens, interval: market.interval }));
+    }
+
+    function marketApplyInterval(){
+      const n = Math.max(5, parseInt($('#m_interval').value||'30',10));
+      market.interval = n; $('#m_interval_lbl').textContent = n; marketSave(); marketStart(); toast('Interval set');
+    }
+
+    function marketReset(){
+      if(!confirm('Clear all tracked tokens?')) return;
+      market.tokens = {}; marketSave(); marketRender(); marketStart();
+    }
+
+    function marketAdd(){
+      const sym = ($('#m_sym').value||'').trim().toUpperCase(); if(!sym) return toast('Symbol required');
+      const type = $('#m_type').value;
+      const amt = ($('#m_amt').value||'').trim(); if(!amt) return toast('Amount required');
+      const toks = parseAddrs($('#m_tokens').value);
+      let conf = { type, amount_in: amt, history: [] };
+      if(type==='v2'){
+        if(toks.length < 2) return toast('v2 needs path tokens');
+        conf.path = toks;
+      } else if(type==='v3'){
+        if(toks.length !== 2) return toast('v3 needs exactly two tokens');
+        conf.token_in = toks[0]; conf.token_out = toks[1]; conf.fee = 3000;
+      } else if(type==='v3-multi'){
+        const fees = ($('#m_fees').value||'').split(',').map(s=>parseInt(s.trim(),10)).filter(n=>!isNaN(n));
+        if(toks.length < 3) return toast('v3-multi needs >=3 tokens');
+        if(fees.length !== toks.length-1) return toast('fees length must be tokens-1');
+        conf.tokens = toks; conf.fees = fees;
+      }
+      market.tokens[sym] = conf; marketSave(); marketRender();
+    }
+
+    // toggle fees input visibility
+    $('#m_type').addEventListener('change', ()=>{
+      $('#m_fees_wrap').style.display = $('#m_type').value==='v3-multi' ? 'block' : 'none';
+    });
+
+    function marketRemove(sym){ delete market.tokens[sym]; marketSave(); marketRender(); }
+
+    function formatNum(x){
+      if(x===null || x===undefined) return '–';
+      if(x===0) return '0';
+      const a = Math.abs(x);
+      if(a>=1) return a.toLocaleString(undefined,{ maximumFractionDigits:6 });
+      return a.toExponential(4);
+    }
+
+    function drawSpark(el, arr){
+      const canvas = el; const w = canvas.width = 120; const h = canvas.height = 32;
+      const ctx = canvas.getContext('2d'); ctx.clearRect(0,0,w,h);
+      if(!arr || arr.length<2) return;
+      const vals = arr.slice(-50);
+      const min = Math.min(...vals), max = Math.max(...vals);
+      const sx = w/(vals.length-1);
+      ctx.beginPath();
+      vals.forEach((v,i)=>{
+        const x=i*sx; const y=h - (max===min? h/2 : (v-min)/(max-min)*h);
+        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      });
+      ctx.strokeStyle = '#9ecbff'; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+
+    function marketRender(){
+      const body = $('#marketBody'); body.innerHTML = '';
+      Object.entries(market.tokens).forEach(([sym,conf])=>{
+        const tr = document.createElement('tr');
+        tr.className = 'rowcard';
+        tr.innerHTML = `
+          <td class="symbol">${sym}</td>
+          <td class="mini muted">${conf.type}</td>
+          <td class="right" id="p_${sym}">–</td>
+          <td class="right" id="d_${sym}">–</td>
+          <td><canvas class="spark" id="s_${sym}"></canvas></td>
+          <td class="right mini muted" id="u_${sym}">–</td>
+          <td class="right"><button class="btn small" onclick="marketRemove('${sym}')">Remove</button></td>
+        `;
+        body.appendChild(tr);
+        // redraw existing spark if we have history
+        const hist = (conf.history||[]).slice(-50);
+        if(hist.length) drawSpark(document.getElementById(`s_${sym}`), hist);
+      });
+      chartSyncSymbols();
+      obSyncSymbols();
+    }
+    // ===== Synthetic Orderbook =====
+    function obSyncSymbols(){
+      const sel = document.getElementById('ob_sym');
+      const prev = sel.value; sel.innerHTML = '';
+      const syms = Object.keys(market.tokens);
+      syms.forEach(s=>{ const o=document.createElement('option'); o.value=s; o.textContent=s; sel.appendChild(o); });
+      if(syms.length){ sel.value = prev && syms.includes(prev) ? prev : syms[0]; }
+    }
+
+    async function obQuote(conf, direction, amt){
+      // direction: 'sellBase' (base->quote) or 'buyBase' (quote->base)
+      try{
+        if(conf.type==='v2'){
+          if(direction==='sellBase'){
+            const j = await fetchJSON('/v2/quote', { amount_in: String(amt), path: conf.path });
+            const out = BigInt(j.amounts[j.amounts.length-1]);
+            return { in: BigInt(amt), out };
+          } else {
+            // buy base with quote: reverse path, amount_in in quote
+            const rev = [...conf.path].reverse();
+            const j = await fetchJSON('/v2/quote', { amount_in: String(amt), path: rev });
+            const baseOut = BigInt(j.amounts[j.amounts.length-1]);
+            return { in: BigInt(amt), out: baseOut };
+          }
+        }
+        if(conf.type==='v3'){
+          if(direction==='sellBase'){
+            const j = await fetchJSON('/v3/quote', { token_in: conf.token_in, token_out: conf.token_out, fee: conf.fee||3000, amount_in: String(amt), sqrt_price_limit_x96:0 });
+            return { in: BigInt(amt), out: BigInt(j.amount_out) };
+          } else {
+            // reverse
+            const j = await fetchJSON('/v3/quote', { token_in: conf.token_out, token_out: conf.token_in, fee: conf.fee||3000, amount_in: String(amt), sqrt_price_limit_x96:0 });
+            return { in: BigInt(amt), out: BigInt(j.amount_out) };
+          }
+        }
+        if(conf.type==='v3-multi'){
+          if(direction==='sellBase'){
+            const j = await fetchJSON('/v3/quoteMulti', { tokens: conf.tokens, fees: conf.fees, amount_in: String(amt) });
+            return { in: BigInt(amt), out: BigInt(j.amount_out) };
+          } else {
+            // reverse multi-hop: tokens reversed, fees reversed
+            const tokensR = [...conf.tokens].reverse();
+            const feesR = [...conf.fees].slice().reverse();
+            const j = await fetchJSON('/v3/quoteMulti', { tokens: tokensR, fees: feesR, amount_in: String(amt) });
+            return { in: BigInt(amt), out: BigInt(j.amount_out) };
+          }
+        }
+      }catch(e){
+        return null;
+      }
+    }
+
+    async function obBuild(){
+      obSyncSymbols();
+      const sym = document.getElementById('ob_sym').value;
+      if(!sym) return;
+      const conf = market.tokens[sym];
+      const levels = Math.max(3, parseInt(document.getElementById('ob_levels').value||'10',10));
+      const stepPct = Math.max(1, parseInt(document.getElementById('ob_step').value||'5',10));
+
+      // base amount is the configured amount_in (BigInt)
+      const baseAmt = BigInt(conf.amount_in || '0');
+      if(baseAmt<=0n){ document.getElementById('ob_meta').textContent = 'Invalid base amount for this symbol.'; return; }
+
+      const bids = []; // each: {baseIn, quoteOut, px}
+      const asks = []; // each: {quoteIn, baseOut, px}
+
+      for(let i=1;i<=levels;i++){
+        const pct = BigInt(stepPct*i);
+        const baseIn = baseAmt * pct / 100n; // sellBase input
+        const q1 = await obQuote(conf, 'sellBase', baseIn);
+        if(q1){
+          const px = Number(q1.out) / Number(q1.in || 1n);
+          bids.push({ baseIn: q1.in, quoteOut: q1.out, px });
+        }
+        const quoteIn = baseAmt * pct / 100n; // buyBase input in quote side (symmetric ladder)
+        const q2 = await obQuote(conf, 'buyBase', quoteIn);
+        if(q2){
+          const px = Number(q2.in) / Number(q2.out || 1n);
+          asks.push({ quoteIn: q2.in, baseOut: q2.out, px });
+        }
+      }
+
+      // render rows level by level
+      const tbody = document.getElementById('ob_body'); tbody.innerHTML = '';
+      const rows = Math.max(bids.length, asks.length);
+      for(let i=0;i<rows;i++){
+        const b = bids[i] || {}; const a = asks[i] || {};
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="mono side-bid">${b.baseIn!==undefined? String(b.baseIn):'–'}</td>
+          <td class="mono side-bid">${b.quoteOut!==undefined? String(b.quoteOut):'–'}</td>
+          <td class="mono side-bid">${isFinite(b.px)? b.px.toFixed(8):'–'}</td>
+          <td class="mono side-ask">${a.quoteIn!==undefined? String(a.quoteIn):'–'}</td>
+          <td class="mono side-ask">${a.baseOut!==undefined? String(a.baseOut):'–'}</td>
+          <td class="mono side-ask">${isFinite(a.px)? a.px.toFixed(8):'–'}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+      document.getElementById('ob_meta').textContent = `${sym}: ${levels} levels, step=${stepPct}% of base amount (${conf.amount_in})`;
+    }
+
+    async function marketTick(){
+      const now = new Date();
+      for(const [sym,conf] of Object.entries(market.tokens)){
+        try{
+          let price = null;
+          if(conf.type==='v2'){
+            const j = await fetchJSON('/v2/quote', { amount_in: conf.amount_in, path: conf.path });
+            const out = BigInt(j.amounts[j.amounts.length-1]);
+            const inp = BigInt(conf.amount_in);
+            price = Number(out) / Number(inp);
+          } else if(conf.type==='v3'){
+            const j = await fetchJSON('/v3/quote', { token_in: conf.token_in, token_out: conf.token_out, fee: conf.fee||3000, amount_in: conf.amount_in, sqrt_price_limit_x96:0 });
+            const out = BigInt(j.amount_out); const inp = BigInt(conf.amount_in); price = Number(out)/Number(inp);
+          } else if(conf.type==='v3-multi'){
+            const j = await fetchJSON('/v3/quoteMulti', { tokens: conf.tokens, fees: conf.fees, amount_in: conf.amount_in });
+            const out = BigInt(j.amount_out); const inp = BigInt(conf.amount_in); price = Number(out)/Number(inp);
+          }
+          if(price!==null && isFinite(price)){
+            const arr = conf.history = (conf.history||[]);
+            arr.push(price); if(arr.length>200) arr.shift();
+            // compute 1m delta vs ~last 2 ticks (assuming 30s interval default)
+            const back = Math.min(arr.length-1, Math.round(60/market.interval));
+            const ref = back>0 ? arr[arr.length-1-back] : arr[0];
+            const delta = ref? ((price-ref)/ref*100) : 0;
+            const pEl = document.getElementById(`p_${sym}`);
+            const dEl = document.getElementById(`d_${sym}`);
+            const sEl = document.getElementById(`s_${sym}`);
+            const uEl = document.getElementById(`u_${sym}`);
+            pEl.textContent = formatNum(price);
+            dEl.textContent = (delta>=0? '+':'') + delta.toFixed(2) + '%';
+            dEl.className = 'right ' + (delta>=0? 'grn':'red');
+            drawSpark(sEl, arr);
+            uEl.textContent = now.toLocaleTimeString();
+          }
+        }catch(e){
+          // leave previous values; could add an error icon if desired
+        }
+      }
+      marketSave();
+      chartDraw();
+    }
+    // ===== Charts =====
+    const chartState = { sym: null, windowMin: 60, ctx: null, dpi: 1 };
+
+    function chartInit(){
+      chartState.ctx = document.getElementById('bigChart').getContext('2d');
+      chartBindControls();
+      chartSyncSymbols();
+      chartResize();
+      window.addEventListener('resize', chartResize);
+    }
+
+    function chartBindControls(){
+      document.querySelectorAll('#charts .chart-btn').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          document.querySelectorAll('#charts .chart-btn').forEach(b=>b.classList.remove('active'));
+          btn.classList.add('active');
+          chartState.windowMin = parseInt(btn.dataset.min,10);
+          chartDraw();
+        });
+      });
+      document.getElementById('chart_sym').addEventListener('change', (e)=>{
+        chartState.sym = e.target.value || null;
+        chartDraw();
+      });
+    }
+
+    function chartSyncSymbols(){
+      const sel = document.getElementById('chart_sym');
+      const prev = sel.value;
+      sel.innerHTML = '';
+      const syms = Object.keys(market.tokens);
+      syms.forEach(s=>{ const o = document.createElement('option'); o.value=s; o.textContent=s; sel.appendChild(o); });
+      if(syms.length){ sel.value = prev && syms.includes(prev) ? prev : syms[0]; chartState.sym = sel.value; }
+      else { chartState.sym = null; }
+    }
+
+    function chartResize(){
+      const canvas = document.getElementById('bigChart');
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1; chartState.dpi = dpr;
+      canvas.width = Math.floor(rect.width * dpr);
+      canvas.height = Math.floor(rect.height * dpr);
+      chartDraw();
+    }
+
+    function chartSeries(){
+      if(!chartState.sym) return [];
+      const conf = market.tokens[chartState.sym];
+      if(!conf || !conf.history || conf.history.length<2) return [];
+      // compute how many points to show based on interval and requested minutes
+      const pts = Math.max(10, Math.round(chartState.windowMin / Math.max(1, market.interval)));
+      return conf.history.slice(-pts);
+    }
+
+    function chartDraw(){
+      const ctx = chartState.ctx; if(!ctx) return;
+      const canvas = ctx.canvas;
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      const data = chartSeries();
+      const meta = document.getElementById('chart_meta');
+      if(!data.length){ meta.textContent = 'No data yet — add tokens to Market Monitor and wait for refreshes.'; return; }
+
+      const w = canvas.width, h = canvas.height, padL=48, padR=12, padT=12, padB=24;
+      const plotW = w - padL - padR, plotH = h - padT - padB;
+      const min = Math.min(...data), max = Math.max(...data);
+      const y = v => padT + (max===min ? plotH/2 : (1 - (v-min)/(max-min)) * plotH);
+      const x = i => padL + (data.length<=1 ? 0 : (i/(data.length-1)) * plotW);
+
+      // grid lines (4)
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      for(let g=0; g<=4; g++){
+        const yy = padT + (g/4)*plotH; ctx.moveTo(padL, yy); ctx.lineTo(w-padR, yy);
+      }
+      ctx.stroke();
+
+      // axis labels
+      ctx.fillStyle = '#9fb0d6'; ctx.font = `${12*chartState.dpi}px ui-monospace, monospace`;
+      ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      for(let g=0; g<=4; g++){
+        const val = min + (g/4)*(max-min);
+        const yy = padT + (1 - g/4)*plotH;
+        ctx.fillText(formatNum(val), padL-8, yy);
+      }
+
+      // line
+      ctx.beginPath(); ctx.lineWidth = 2*chartState.dpi; ctx.strokeStyle = '#7aa2ff';
+      data.forEach((v,i)=>{ if(i===0) ctx.moveTo(x(i), y(v)); else ctx.lineTo(x(i), y(v)); });
+      ctx.stroke();
+
+      // last point marker
+      const last = data[data.length-1];
+      ctx.fillStyle = '#37d99e'; ctx.beginPath(); ctx.arc(x(data.length-1), y(last), 3*chartState.dpi, 0, Math.PI*2); ctx.fill();
+
+      // meta
+      const first = data[0];
+      const change = first ? ((last-first)/first*100) : 0;
+      const dir = change>=0 ? '+' : '';
+      meta.textContent = `${chartState.sym} · ${formatNum(last)}  (${dir}${change.toFixed(2)}% over ${chartState.windowMin}m)`;
+    }
+
+    function marketStart(){
+      if(market.timer){ clearInterval(market.timer); market.timer=null; }
+      market.timer = setInterval(marketTick, Math.max(5, market.interval)*1000);
+      // kick immediately
+      marketTick();
+    }
+    const $ = sel => document.querySelector(sel);
+
+    function toast(msg){
+      const t = $('#toast');
+      t.textContent = msg; t.classList.add('show');
+      setTimeout(()=>t.classList.remove('show'), 1800);
+    }
+
+    function savePrefs(){
+      localStorage.setItem('apiBase', $('#apiBase').value.trim());
+      localStorage.setItem('apiKey', $('#apiKey').value.trim());
+      $('#apiBasePill').textContent = $('#apiBase').value.trim() || '/';
+      toast('Saved');
+    }
+    function clearPrefs(){
+      localStorage.removeItem('apiBase');
+      localStorage.removeItem('apiKey');
+      $('#apiBase').value=''; $('#apiKey').value='';
+      $('#apiBasePill').textContent = '/';
+    }
+    function base(){
+      return (localStorage.getItem('apiBase') || '').replace(/\/$/, '');
+    }
+    function headers(){
+      const h = { 'content-type':'application/json' };
+      const k = localStorage.getItem('apiKey');
+      if(k) h['X-API-Key'] = k;
+      return h;
+    }
+    async function fetchJSON(path, body){
+      const url = base() + path;
+      const opt = { method: body? 'POST':'GET', headers: headers() };
+      if(body) opt.body = JSON.stringify(body);
+      const r = await fetch(url, opt);
+      if(!r.ok){ throw new Error(`${r.status} ${r.statusText}`); }
+      return r.json();
+    }
+
+    async function init(){
+      $('#status').textContent = 'connecting…';
+      try{
+        const h = await fetchJSON('/health');
+        $('#chainId').textContent = h.chain_id ?? '–';
+        $('#web3Cli').textContent = h.web3 ?? '–';
+        $('#signer').textContent = h.signer ?? '–';
+        $('#status').textContent = 'healthy';
+        $('#status').classList.remove('bad');
+        $('#status').classList.add('ok');
+      }catch(e){
+        $('#status').textContent = 'unreachable';
+        $('#status').classList.remove('ok');
+        $('#status').classList.add('bad');
+        toast('Health check failed');
+      }
+      try{
+        const c = await fetchJSON('/config');
+        $('#weth').textContent = c.WETH || '–';
+        $('#v2router').textContent = c.UNIV2_ROUTER || '–';
+        $('#v3router').textContent = c.UNIV3_SWAP_ROUTER || '–';
+        $('#v3quoter').textContent = c.UNIV3_QUOTER || '–';
+      }catch{ /* noop */ }
+    }
+
+    function prefill(kind){
+      if(kind==='v2'){
+        $('#v2_amt').value = '1000000000000000000';
+        $('#v2_path').value = '0xIN,0xWETH,0xOUT';
+      } else if(kind==='v3'){
+        $('#v3_in').value='0xIN'; $('#v3_out_t').value='0xOUT';
+        $('#v3_fee').value='3000'; $('#v3_amt').value='1000000000000000000';
+      } else if(kind==='v3m'){
+        $('#v3m_tokens').value='0xIN,0xWETH,0xOUT';
+        $('#v3m_fees').value='3000,500'; $('#v3m_amt').value='1000000000000000000';
+      } else if(kind==='permit'){
+        $('#perm_token').value='0xToken'; $('#perm_spender').value='0xRouter';
+        $('#perm_value').value='115792089237316195423570985008687907853269984665640564039457584007913129639935';
+        $('#perm_deadline').value='1924992000';
+      } else if(kind==='receipt'){
+        $('#rc_hash').value='0xTXHASH';
+      }
+    }
+
+    async function tryGet(path){
+      try{ const j = await fetchJSON(path); toast('OK'); alert(JSON.stringify(j,null,2)); }
+      catch(e){ toast('Error'); alert('Request failed: '+e.message); }
+    }
+
+    function parseAddrs(str){ return str.split(',').map(s=>s.trim()).filter(Boolean); }
+
+    async function v2Quote(){
+      const amount_in = $('#v2_amt').value.trim();
+      const path = parseAddrs($('#v2_path').value);
+      $('#v2_out').textContent = '…';
+      try{
+        const j = await fetchJSON('/v2/quote', { amount_in, path });
+        $('#v2_out').textContent = JSON.stringify(j, null, 2);
+      }catch(e){ $('#v2_out').textContent = 'Error: '+e.message; }
+    }
+
+    async function v2Swap(){
+      const amount_in = $('#v2_amt').value.trim();
+      const path = parseAddrs($('#v2_path').value);
+      try{
+        const j = await fetchJSON('/v2/swap', { amount_in, path });
+        toast('Swap submitted');
+        $('#v2_out').textContent = JSON.stringify(j, null, 2);
+      }catch(e){ toast('Swap failed'); $('#v2_out').textContent = 'Error: '+e.message; }
+    }
+
+    async function v3Quote(){
+      const amount_in = $('#v3_amt').value.trim();
+      const token_in = $('#v3_in').value.trim();
+      const token_out = $('#v3_out_t').value.trim();
+      const fee = parseInt($('#v3_fee').value.trim()||'3000',10);
+      $('#v3_out').textContent = '…';
+      try{
+        const j = await fetchJSON('/v3/quote', { token_in, token_out, fee, amount_in, sqrt_price_limit_x96:0 });
+        $('#v3_out').textContent = JSON.stringify(j, null, 2);
+      }catch(e){ $('#v3_out').textContent = 'Error: '+e.message; }
+    }
+
+    async function v3Swap(){
+      const amount_in = $('#v3_amt').value.trim();
+      const token_in = $('#v3_in').value.trim();
+      const token_out = $('#v3_out_t').value.trim();
+      const fee = parseInt($('#v3_fee').value.trim()||'3000',10);
+      try{
+        const j = await fetchJSON('/v3/swap', { token_in, token_out, fee, amount_in });
+        toast('Swap submitted');
+        $('#v3_out').textContent = JSON.stringify(j, null, 2);
+      }catch(e){ toast('Swap failed'); $('#v3_out').textContent = 'Error: '+e.message; }
+    }
+
+    async function v3mQuote(){
+      const amount_in = $('#v3m_amt').value.trim();
+      const tokens = parseAddrs($('#v3m_tokens').value);
+      const fees = $('#v3m_fees').value.split(',').map(s=>parseInt(s.trim(),10)).filter(n=>!isNaN(n));
+      $('#v3m_out').textContent = '…';
+      try{
+        const j = await fetchJSON('/v3/quoteMulti', { tokens, fees, amount_in });
+        $('#v3m_out').textContent = JSON.stringify(j, null, 2);
+      }catch(e){ $('#v3m_out').textContent = 'Error: '+e.message; }
+    }
+    async function v3mSwap(){
+      const amount_in = $('#v3m_amt').value.trim();
+      const tokens = parseAddrs($('#v3m_tokens').value);
+      const fees = $('#v3m_fees').value.split(',').map(s=>parseInt(s.trim(),10)).filter(n=>!isNaN(n));
+      try{
+        const j = await fetchJSON('/v3/swapMulti', { tokens, fees, amount_in });
+        toast('Swap submitted');
+        $('#v3m_out').textContent = JSON.stringify(j, null, 2);
+      }catch(e){ toast('Swap failed'); $('#v3m_out').textContent = 'Error: '+e.message; }
+    }
+
+    async function permitSign(){
+      const token = $('#perm_token').value.trim();
+      const spender = $('#perm_spender').value.trim();
+      const value = $('#perm_value').value.trim();
+      const deadline = parseInt($('#perm_deadline').value.trim()||'0',10);
+      $('#perm_out').textContent = '…';
+      try{
+        const j = await fetchJSON('/erc20/permit/sign', { token, spender, value, deadline });
+        $('#perm_out').textContent = JSON.stringify(j, null, 2);
+      }catch(e){ $('#perm_out').textContent = 'Error: '+e.message; }
+    }
+
+    async function fetchReceipt(){
+      const h = $('#rc_hash').value.trim();
+      if(!h) return toast('Enter a tx hash');
+      try{
+        const j = await fetchJSON('/index/receipt/'+h);
+        $('#rc_out').textContent = JSON.stringify(j, null, 2);
+      }catch(e){ $('#rc_out').textContent = 'Error: '+e.message; }
+    }
+
+    // boot
+    (function(){
+      $('#year').textContent = new Date().getFullYear();
+      const ab = localStorage.getItem('apiBase') || (location.origin.includes('http')? location.origin : '');
+      const ak = localStorage.getItem('apiKey') || '';
+      $('#apiBase').value = ab; $('#apiKey').value = ak; $('#apiBasePill').textContent = ab || '/';
+      marketLoad();
+      if(ab) init();
+      chartInit();
+      obSyncSymbols();
+    })();
+  </script>
+</body>
+</html>

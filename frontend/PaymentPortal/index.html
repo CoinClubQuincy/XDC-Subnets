@@ -5,9 +5,20 @@
   <title>Siftr Invoice → MetaMask / Web3Auth</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
-   <script src="app.js"></script><link rel="stylesheet" href="style.css">
-  <!-- Web3Auth Modal SDK (v10.x UMD) -->
-  <script src="https://cdn.jsdelivr.net/npm/@web3auth/modal@10.3.0/dist/modal.umd.min.js"></script>
+  <!-- Force UMD to attach to window by temporarily disabling AMD -->
+  <script>
+    (function(){
+      try { window.___amd_backup = window.define; window.define = undefined; } catch (_) {}
+    })();
+  </script>
+  <script src="vendor/web3auth-modal.umd.min.js"></script>
+  <script>
+    (function(){
+      try { if (window.___amd_backup) window.define = window.___amd_backup; } catch (_) {}
+    })();
+  </script>
+  <script src="app.js"></script>
+  <link rel="stylesheet" href="style.css">
   <!-- Note: From v10, you typically don't need to load OpenLogin adapter separately; it's bundled in Modal. -->
 </head>
 <body class="with-topbar">
@@ -368,10 +379,10 @@
 
       web3authInitPromise = (async () => {
         try {
-          const W3A = window.web3auth || window.Web3Auth;
+          let W3A = window.Web3Auth || window.web3auth || window.Web3AuthModal || window.web3authModal || null;
           if (!W3A || typeof W3A.Web3Auth !== 'function') {
-            console.warn('Web3Auth SDK not loaded (check CDN).');
-            setAlert('Web3Auth SDK not loaded. Check CDN script tag.', false);
+            console.warn('Web3Auth UMD not found. Ensure vendor/web3auth-modal.umd.min.js is loaded and AMD guard is applied.');
+            setAlert('Web3Auth SDK not loaded. Check that vendor/web3auth-modal.umd.min.js is served and wrapped with the AMD guard in <head>.', false);
             return;
           }
           if (!CONFIG.WEB3AUTH_CLIENT_ID || CONFIG.WEB3AUTH_CLIENT_ID.startsWith('REPLACE_')) {
